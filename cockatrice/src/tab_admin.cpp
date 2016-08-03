@@ -83,7 +83,12 @@ TabAdmin::TabAdmin(TabSupervisor *_tabSupervisor, AbstractClient *_client, bool 
     mainLayout->addWidget(lockButton);
     
     retranslateUi();
-    setLayout(mainLayout);
+
+    QWidget * mainWidget = new QWidget(this);
+    mainWidget->setLayout(mainLayout);
+    setCentralWidget(mainWidget);
+
+    actUnlock();
 }
 
 void TabAdmin::retranslateUi()
@@ -122,14 +127,12 @@ void TabAdmin::actReloadConfig()
 
 void TabAdmin::actUnlock()
 {
-    if (QMessageBox::question(this, tr("Unlock administration functions"), tr("Do you really want to unlock the administration functions?"), QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
         if (fullAdmin)
             adminGroupBox->setEnabled(true);
         lockButton->setEnabled(true);
         unlockButton->setEnabled(false);
         locked = false;
         emit adminLockChanged(false);
-    }
 }
 
 void TabAdmin::actLock()

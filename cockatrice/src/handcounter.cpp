@@ -1,5 +1,4 @@
 #include <QPainter>
-#include <QSvgRenderer>
 #include <QPixmapCache>
 #include <QGraphicsSceneMouseEvent>
 #include "handcounter.h"
@@ -31,16 +30,8 @@ void HandCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*op
     painter->save();
     QSize translatedSize = painter->combinedTransform().mapRect(boundingRect()).size().toSize();
     QPixmap cachedPixmap;
-#if QT_VERSION >= 0x040600
     if (!QPixmapCache::find("handCounter" + QString::number(translatedSize.width()), &cachedPixmap)) {
-#else
-    if (!QPixmapCache::find("handCounter" + QString::number(translatedSize.width()), cachedPixmap)) {
-#endif
-        QSvgRenderer svg(QString(":/resources/hand.svg"));
-        cachedPixmap = QPixmap(translatedSize);
-        cachedPixmap.fill(Qt::transparent);
-        QPainter painter(&cachedPixmap);
-        svg.render(&painter, QRectF(0, 0, translatedSize.width(), translatedSize.height()));
+        cachedPixmap = QPixmap("theme:hand").scaled(translatedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QPixmapCache::insert("handCounter" + QString::number(translatedSize.width()), cachedPixmap);
     }
     painter->resetTransform();

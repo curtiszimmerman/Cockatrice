@@ -36,7 +36,7 @@ GameSelector::GameSelector(AbstractClient *_client, const TabSupervisor *_tabSup
     gameListView->setAlternatingRowColors(true);
     gameListView->setRootIsDecorated(true);
     // game created width
-    gameListView->resizeColumnToContents(1);
+    gameListView->setColumnWidth(1, gameListView->columnWidth(2) * 0.7);
     // players width
     gameListView->resizeColumnToContents(6);
     // description width
@@ -54,16 +54,13 @@ GameSelector::GameSelector(AbstractClient *_client, const TabSupervisor *_tabSup
     if (showfilters && restoresettings)
     	gameListProxyModel->loadFilterParameters(gameTypeMap);
 
-#if QT_VERSION < 0x050000
-    gameListView->header()->setResizeMode(0, QHeaderView::ResizeToContents);
-#else
     gameListView->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-#endif
+
     filterButton = new QPushButton;
-    filterButton->setIcon(QIcon(":/resources/icon_search_black.svg"));
+    filterButton->setIcon(QPixmap("theme:icons/search"));
     connect(filterButton, SIGNAL(clicked()), this, SLOT(actSetFilter()));
     clearFilterButton = new QPushButton;
-    clearFilterButton->setIcon(QIcon(":/resources/icon_clearsearch.svg"));
+    clearFilterButton->setIcon(QPixmap("theme:icons/clearsearch"));
     clearFilterButton->setEnabled(true);
     connect(clearFilterButton, SIGNAL(clicked()), this, SLOT(actClearFilter()));
 
@@ -112,6 +109,7 @@ void GameSelector::actSetFilter()
 
     clearFilterButton->setEnabled(true);
 
+    gameListProxyModel->setShowBuddiesOnlyGames(dlg.getShowBuddiesOnlyGames());
     gameListProxyModel->setUnavailableGamesVisible(dlg.getUnavailableGamesVisible());
     gameListProxyModel->setShowPasswordProtectedGames(dlg.getShowPasswordProtectedGames());
     gameListProxyModel->setGameNameFilter(dlg.getGameNameFilter());

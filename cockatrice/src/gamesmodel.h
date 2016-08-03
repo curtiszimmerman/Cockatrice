@@ -8,10 +8,8 @@
 #include "gametypemap.h"
 #include "pb/serverinfo_game.pb.h"
 
-class ServerInfo_User;
-
 class GamesModel : public QAbstractTableModel {
-    Q_OBJECT
+Q_OBJECT
 private:
     QList<ServerInfo_Game> gameList;
     QMap<int, QString> rooms;
@@ -19,6 +17,7 @@ private:
 
     static const int NUM_COLS = 8;
     static const int SECS_PER_MIN  = 60;
+    static const int SECS_PER_TEN_MIN = 600;
     static const int SECS_PER_HOUR = 3600;
 public:
     static const int SORT_ROLE = Qt::UserRole+1;
@@ -42,26 +41,25 @@ public:
     const QMap<int, GameTypeMap> &getGameTypes() { return gameTypes; }
 };
 
+class ServerInfo_User;
+
 class GamesProxyModel : public QSortFilterProxyModel {
     Q_OBJECT
 private:
     ServerInfo_User *ownUser;
+    bool showBuddiesOnlyGames;
     bool unavailableGamesVisible;
     bool showPasswordProtectedGames;
     QString gameNameFilter, creatorNameFilter;
     QSet<int> gameTypeFilter;
     int maxPlayersFilterMin, maxPlayersFilterMax;
 
-    static const int DEFAULT_MAX_PLAYERS_MAX = 99;
-
-    /*
-     * The game type might contain special characters, so to use it in
-     * QSettings we just hash it.
-     */
-    QString hashGameType(const QString &gameType) const;
+    static const int DEFAULT_MAX_PLAYERS_MAX = 99;   
 public:
     GamesProxyModel(QObject *parent = 0, ServerInfo_User *_ownUser = 0);
 
+    bool getShowBuddiesOnlyGames() const {return showBuddiesOnlyGames; }
+    void setShowBuddiesOnlyGames(bool _showBuddiesOnlyGames);
     bool getUnavailableGamesVisible() const { return unavailableGamesVisible; }
     void setUnavailableGamesVisible(bool _unavailableGamesVisible);
     bool getShowPasswordProtectedGames() const { return showPasswordProtectedGames; }

@@ -44,6 +44,8 @@ message Command_Login {
     optional string user_name = 1;
     optional string password = 2;
     optional string clientid = 3;
+    optional string clientver = 4;
+    repeated string clientfeatures = 5;
 }
 
 message Command_Message {
@@ -119,6 +121,7 @@ message Command_Register {
     // Country code of the user. 2 letter ISO format
     optional string country = 5;
     optional string real_name = 6;
+    optional string clientid = 7;
 }
 
 // User wants to activate an account

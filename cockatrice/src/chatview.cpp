@@ -11,6 +11,8 @@
 #include "pixmapgenerator.h"
 #include "settingscache.h"
 #include "tab_userlists.h"
+#include "soundengine.h"
+#include "room_message_type.h"
 
 const QColor DEFAULT_MENTION_COLOR = QColor(194, 31, 47);
 const QColor OTHER_USER_COLOR = QColor(0, 65, 255); // dark blue
@@ -78,7 +80,7 @@ void ChatView::appendHtmlServerMessage(const QString &html, bool optionalIsBold,
 {
     bool atBottom = verticalScrollBar()->value() >= verticalScrollBar()->maximum();
 
-    QString htmlText = "<font color=" + ((optionalFontColor.size() > 0) ? optionalFontColor : SERVER_MESSAGE_COLOR) + ">" + html + "</font>";
+    QString htmlText = "<font color=" + ((optionalFontColor.size() > 0) ? optionalFontColor : SERVER_MESSAGE_COLOR) + ">" + QDateTime::currentDateTime().toString("[hh:mm:ss] ")+ html + "</font>";
 
     if (optionalIsBold)
         htmlText = "<b>" + htmlText + "</b>";
@@ -120,7 +122,7 @@ void ChatView::appendUrlTag(QTextCursor &cursor, QString url)
     cursor.setCharFormat(oldFormat);
 }
 
-void ChatView::appendMessage(QString message, QString sender, UserLevelFlags userLevel, bool playerBold)
+void ChatView::appendMessage(QString message, RoomMessageTypeFlags messageType, QString sender, UserLevelFlags userLevel, bool playerBold)
 {
     bool atBottom = verticalScrollBar()->value() >= verticalScrollBar()->maximum();
     bool sameSender = (sender == lastSender) && !lastSender.isEmpty();
@@ -128,7 +130,7 @@ void ChatView::appendMessage(QString message, QString sender, UserLevelFlags use
     lastSender = sender;
     
     // timestamp
-    if (showTimestamps && !sameSender) {
+    if (showTimestamps && (!sameSender || sender.toLower() == "servatrice") && !sender.isEmpty()) {
         QTextCharFormat timeFormat;
         timeFormat.setForeground(QColor(SERVER_MESSAGE_COLOR));
         if (sender.isEmpty())
@@ -137,36 +139,55 @@ void ChatView::appendMessage(QString message, QString sender, UserLevelFlags use
         cursor.insertText(QDateTime::currentDateTime().toString("[hh:mm:ss] "));
     }
 
-    // nickname    
-    QTextCharFormat senderFormat;
-    if (tabSupervisor && tabSupervisor->getUserInfo() && (sender == QString::fromStdString(tabSupervisor->getUserInfo()->name()))) {
-        senderFormat.setForeground(QBrush(getCustomMentionColor()));
-        senderFormat.setFontWeight(QFont::Bold);
-    } else {
-        senderFormat.setForeground(QBrush(OTHER_USER_COLOR));
-        if (playerBold)
+    // nickname
+    if (sender.toLower() != "servatrice") {
+        QTextCharFormat senderFormat;
+        if (tabSupervisor && tabSupervisor->getUserInfo() &&
+            (sender == QString::fromStdString(tabSupervisor->getUserInfo()->name()))) {
+            senderFormat.setForeground(QBrush(getCustomMentionColor()));
             senderFormat.setFontWeight(QFont::Bold);
-    }
-    senderFormat.setAnchor(true);
-    senderFormat.setAnchorHref("user://" + QString::number(userLevel) + "_" + sender);
-    if (sameSender) {
-        cursor.insertText("    ");
-    } else {
-        if (!sender.isEmpty() && tabSupervisor->getUserListsTab()) {
-            const int pixelSize = QFontInfo(cursor.charFormat().font()).pixelSize();
-            QMap<QString, UserListTWI *> buddyList = tabSupervisor->getUserListsTab()->getBuddyList()->getUsers();
-            cursor.insertImage(UserLevelPixmapGenerator::generatePixmap(pixelSize, userLevel, buddyList.contains(sender)).toImage());
-            cursor.insertText(" ");
+        } else {
+            senderFormat.setForeground(QBrush(OTHER_USER_COLOR));
+            if (playerBold)
+                senderFormat.setFontWeight(QFont::Bold);
         }
-        cursor.setCharFormat(senderFormat);
-        if (!sender.isEmpty())
-            sender.append(": ");
-        cursor.insertText(sender);
+        senderFormat.setAnchor(true);
+        senderFormat.setAnchorHref("user://" + QString::number(userLevel) + "_" + sender);
+        if (sameSender) {
+            cursor.insertText("    ");
+        } else {
+            if (!sender.isEmpty() && tabSupervisor->getUserListsTab()) {
+                const int pixelSize = QFontInfo(cursor.charFormat().font()).pixelSize();
+                QMap<QString, UserListTWI *> buddyList = tabSupervisor->getUserListsTab()->getBuddyList()->getUsers();
+                cursor.insertImage(UserLevelPixmapGenerator::generatePixmap(pixelSize, userLevel,
+                                                                            buddyList.contains(sender)).toImage());
+                cursor.insertText(" ");
+            }
+            cursor.setCharFormat(senderFormat);
+            if (!sender.isEmpty())
+                sender.append(": ");
+            cursor.insertText(sender);
+        }
     }
 
     // use different color for server messages 
     defaultFormat = QTextCharFormat();
     if (sender.isEmpty()) {
+        switch (messageType) {
+            case Event_RoomSay::Welcome:
+                defaultFormat.setForeground(Qt::darkGreen);
+                defaultFormat.setFontWeight(QFont::Bold);
+                break;
+            case Event_RoomSay::ChatHistory:
+                defaultFormat.setForeground(Qt::gray);
+                defaultFormat.setFontWeight(QFont::Light);
+                defaultFormat.setFontItalic(true);
+                break;
+            default:
+                defaultFormat.setForeground(Qt::darkGreen);
+                defaultFormat.setFontWeight(QFont::Bold);
+        }
+    } else if (sender.toLower() == "servatrice") {
         defaultFormat.setForeground(Qt::darkGreen);
         defaultFormat.setFontWeight(QFont::Bold);
     }
@@ -276,6 +297,7 @@ void ChatView::checkMention(QTextCursor &cursor, QString &message, QString &send
             if (userName.toLower() == fullMentionUpToSpaceOrEnd.toLower()) // Is this user you?
             {
                 // You have received a valid mention!!
+                soundEngine->playSound("chat_mention");
                 mentionFormat.setBackground(QBrush(getCustomMentionColor()));
                 mentionFormat.setForeground(settingsCache->getChatMentionForeground() ? QBrush(Qt::white) : QBrush(Qt::black));
                 cursor.insertText(mention, mentionFormat);
@@ -301,6 +323,7 @@ void ChatView::checkMention(QTextCursor &cursor, QString &message, QString &send
 
         if (isModeratorSendingGlobal(userLevel, fullMentionUpToSpaceOrEnd)) {
             // Moderator Sending Global Message
+            soundEngine->playSound("all_mention");
             mentionFormat.setBackground(QBrush(getCustomMentionColor()));
             mentionFormat.setForeground(settingsCache->getChatMentionForeground() ? QBrush(Qt::white) : QBrush(Qt::black));
             cursor.insertText("@" + fullMentionUpToSpaceOrEnd, mentionFormat);

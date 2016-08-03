@@ -6,24 +6,24 @@
 
 #include "carditem.h"
 #include "carddatabase.h"
+#include "pictureloader.h"
 #include "main.h"
 
-CardInfoPicture::CardInfoPicture(int width, QWidget *parent)
+CardInfoPicture::CardInfoPicture(QWidget *parent)
     : QWidget(parent),
-    info(0),
+    info(nullptr),
     pixmapDirty(true)
 {
-    setFixedWidth(width);
     setMinimumHeight(100);
-    setMaximumHeight(width / (qreal) CARD_WIDTH * (qreal) CARD_HEIGHT);
 }
 
 void CardInfoPicture::setCard(CardInfo *card)
 {
     if (info)
-        disconnect(info, 0, this, 0);
+        disconnect(info, nullptr, this, nullptr);
     info = card;
-    connect(info, SIGNAL(pixmapUpdated()), this, SLOT(updatePixmap()));
+    if(info)
+        connect(info, SIGNAL(pixmapUpdated()), this, SLOT(updatePixmap()));
 
     updatePixmap();
 }
@@ -41,14 +41,7 @@ void CardInfoPicture::updatePixmap()
 
 void CardInfoPicture::loadPixmap()
 {
-    if(info)
-        info->getPixmap(size(), resizedPixmap);
-    else
-        resizedPixmap = QPixmap();
-
-
-    if (resizedPixmap.isNull())
-        db->getCard()->getPixmap(size(), resizedPixmap);
+    PictureLoader::getPixmap(resizedPixmap, info, size());
 }
 
 void CardInfoPicture::paintEvent(QPaintEvent *)

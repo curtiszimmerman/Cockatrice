@@ -7,16 +7,14 @@
 #include "main.h"
 #include "oraclewizard.h"
 #include "settingscache.h"
+#include "thememanager.h"
 
 QTranslator *translator, *qtTranslator;
 SettingsCache *settingsCache;
+ThemeManager *themeManager;
 
 const QString translationPrefix = "oracle";
-#ifdef TRANSLATION_PATH
-QString translationPath = TRANSLATION_PATH;
-#else
-QString translationPath = QString();
-#endif
+QString translationPath;
 
 void installNewTranslator()
 {
@@ -32,25 +30,21 @@ int main(int argc, char *argv[])
 {
 	QApplication app(argc, argv);
 
-#if QT_VERSION < 0x050000
-	// gone in Qt5, all source files _MUST_ be utf8-encoded
-	QTextCodec::setCodecForCStrings(QTextCodec::codecForName("UTF-8"));
-#endif
-
 	QCoreApplication::setOrganizationName("Cockatrice");
 	QCoreApplication::setOrganizationDomain("cockatrice");
 	// this can't be changed, as it influences the default savepath for cards.xml
 	QCoreApplication::setApplicationName("Cockatrice");
 
-    if (translationPath.isEmpty()) {
 #ifdef Q_OS_MAC
-        translationPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+    translationPath = qApp->applicationDirPath() + "/../Resources/translations";
 #elif defined(Q_OS_WIN)
-        translationPath = app.applicationDirPath() + "/translations";
+    translationPath = qApp->applicationDirPath() + "/translations";
+#else // linux
+    translationPath = qApp->applicationDirPath() + "/../share/cockatrice/translations";
 #endif
-    }
 
 	settingsCache = new SettingsCache;
+    themeManager = new ThemeManager;
 
     qtTranslator = new QTranslator;
     translator = new QTranslator;
@@ -58,7 +52,7 @@ int main(int argc, char *argv[])
 
 	OracleWizard wizard;
 
-    QIcon icon(":/resources/appicon.svg");
+    QIcon icon("theme:appicon.svg");
     wizard.setWindowIcon(icon);
 
 	wizard.show();

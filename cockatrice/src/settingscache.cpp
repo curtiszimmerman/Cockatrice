@@ -1,24 +1,180 @@
 #include "settingscache.h"
 #include <QSettings>
+#include <QFile>
+#include <QDir>
+#include <QDebug>
+#include <QApplication>
+#include <QStandardPaths>
 
+QString SettingsCache::getDataPath()
+{
+    return 
+#ifdef PORTABLE_BUILD
+    qApp->applicationDirPath() + "/data/";
+#else
+    QStandardPaths::writableLocation(QStandardPaths::DataLocation);
+#endif
+}
+
+QString SettingsCache::getSettingsPath()
+{
+    return getDataPath() + "/settings/";
+}
+
+void SettingsCache::translateLegacySettings()
+{
+#ifdef PORTABLE_BUILD
+    return;
+#endif
+
+    //Layouts
+    QFile layoutFile(getSettingsPath()+"layouts/deckLayout.ini");
+    if(layoutFile.exists())
+        if(layoutFile.copy(getSettingsPath()+"layouts.ini"))
+            layoutFile.remove();
+
+    QStringList usedKeys;
+    QSettings legacySetting;
+
+    //Sets
+    legacySetting.beginGroup("sets");
+    QStringList setsGroups = legacySetting.childGroups();
+    for(int i = 0; i < setsGroups.size(); i++){        
+        legacySetting.beginGroup(setsGroups.at(i));
+        cardDatabase().setEnabled(setsGroups.at(i), legacySetting.value("enabled").toBool());
+        cardDatabase().setIsKnown(setsGroups.at(i), legacySetting.value("isknown").toBool());
+        cardDatabase().setSortKey(setsGroups.at(i), legacySetting.value("sortkey").toUInt());
+        legacySetting.endGroup();
+    }
+    QStringList setsKeys = legacySetting.allKeys();
+    for (int i = 0; i < setsKeys.size(); ++i) {
+        usedKeys.append("sets/"+setsKeys.at(i));
+    }
+    legacySetting.endGroup();
+
+    //Servers
+    legacySetting.beginGroup("server");
+    servers().setPreviousHostLogin(legacySetting.value("previoushostlogin").toInt());
+    servers().setPreviousHostList(legacySetting.value("previoushosts").toStringList());
+    servers().setPrevioushostindex(legacySetting.value("previoushostindex").toInt());
+    servers().setHostName(legacySetting.value("hostname").toString());
+    servers().setPort(legacySetting.value("port").toString());
+    servers().setPlayerName(legacySetting.value("playername").toString());
+    servers().setPassword(legacySetting.value("password").toString());
+    servers().setSavePassword(legacySetting.value("save_password").toInt());
+    servers().setAutoConnect(legacySetting.value("auto_connect").toInt());
+    usedKeys.append(legacySetting.allKeys());
+    QStringList allKeysServer = legacySetting.allKeys();
+    for (int i = 0; i < allKeysServer.size(); ++i) {
+        usedKeys.append("server/"+allKeysServer.at(i));
+    }
+    legacySetting.endGroup();
+
+    //Messages
+    legacySetting.beginGroup("messages");
+    QStringList allMessages = legacySetting.allKeys();
+    for (int i = 0; i < allMessages.size(); ++i) {
+        if(allMessages.at(i) != "count"){
+            QString temp = allMessages.at(i);
+            int index = temp.remove("msg").toInt();
+            messages().setMessageAt(index,legacySetting.value(allMessages.at(i)).toString());
+        }
+    }
+    messages().setCount(legacySetting.value("count").toInt());
+    QStringList allKeysmessages = legacySetting.allKeys();
+    for (int i = 0; i < allKeysmessages.size(); ++i) {
+        usedKeys.append("messages/"+allKeysmessages.at(i));
+    }
+    legacySetting.endGroup();
+
+    //Game filters
+    legacySetting.beginGroup("filter_games");
+    gameFilters().setUnavailableGamesVisible(legacySetting.value("unavailable_games_visible").toBool());
+    gameFilters().setShowPasswordProtectedGames(legacySetting.value("show_password_protected_games").toBool());
+    gameFilters().setGameNameFilter(legacySetting.value("game_name_filter").toString());
+    gameFilters().setMinPlayers(legacySetting.value("min_players").toInt());
+
+    if (legacySetting.value("max_players").toInt() > 1)
+        gameFilters().setMaxPlayers(legacySetting.value("max_players").toInt());
+    else
+        gameFilters().setMaxPlayers(99); // This prevents a bug where no games will show if max was not set before
+
+    QStringList allFilters = legacySetting.allKeys();
+    for (int i = 0; i < allFilters.size(); ++i) {
+        if(allFilters.at(i).startsWith("game_type")){
+            gameFilters().setGameHashedTypeEnabled(allFilters.at(i), legacySetting.value(allFilters.at(i)).toBool());
+        }
+    }
+    QStringList allKeysfilter_games = legacySetting.allKeys();
+    for (int i = 0; i < allKeysfilter_games.size(); ++i) {
+        usedKeys.append("filter_games/"+allKeysfilter_games.at(i));
+    }
+    legacySetting.endGroup();
+
+    QStringList allLegacyKeys = legacySetting.allKeys();
+    for (int i = 0; i < allLegacyKeys.size(); ++i) {
+        if(usedKeys.contains(allLegacyKeys.at(i)))
+            continue;
+        settings->setValue(allLegacyKeys.at(i), legacySetting.value(allLegacyKeys.at(i)));
+    }
+}
+
+QString SettingsCache::getSafeConfigPath(QString configEntry, QString defaultPath) const
+{
+    QString tmp = settings->value(configEntry).toString();
+    // if the config settings is empty or refers to a not-existing folder,
+    // ensure that the defaut path exists and return it
+    if (!QDir(tmp).exists() || tmp.isEmpty()) {
+        if(!QDir().mkpath(defaultPath))
+            qDebug() << "[SettingsCache] Could not create folder:" << defaultPath;
+        tmp = defaultPath;
+    }
+    return tmp;
+}
+
+QString SettingsCache::getSafeConfigFilePath(QString configEntry, QString defaultPath) const
+{
+    QString tmp = settings->value(configEntry).toString();
+    // if the config settings is empty or refers to a not-existing file,
+    // return the default Path
+    if (!QFile::exists(tmp) || tmp.isEmpty())
+        tmp = defaultPath;
+    return tmp;
+}
 SettingsCache::SettingsCache()
 {
-    settings = new QSettings(this);
+    // define a dummy context that will be used where needed
+    QString dummy = QT_TRANSLATE_NOOP("i18n", "English");
 
+    QString dataPath = getDataPath();
+    QString settingsPath = getSettingsPath();
+    settings = new QSettings(settingsPath+"global.ini", QSettings::IniFormat, this);
+    shortcutsSettings = new ShortcutsSettings(settingsPath,this);
+    cardDatabaseSettings = new CardDatabaseSettings(settingsPath,this);
+    serversSettings = new ServersSettings(settingsPath,this);
+    messageSettings = new MessageSettings(settingsPath,this);
+    gameFiltersSettings = new GameFiltersSettings(settingsPath, this);
+    layoutsSettings = new LayoutsSettings(settingsPath, this);
+
+    if(!QFile(settingsPath+"global.ini").exists())
+        translateLegacySettings();
+
+    notifyAboutUpdates = settings->value("personal/updatenotification", true).toBool();
     lang = settings->value("personal/lang").toString();
     keepalive = settings->value("personal/keepalive", 5).toInt();
 
-    deckPath = settings->value("paths/decks").toString();
-    replaysPath = settings->value("paths/replays").toString();
-    picsPath = settings->value("paths/pics").toString();
-    cardDatabasePath = settings->value("paths/carddatabase").toString();
-    tokenDatabasePath = settings->value("paths/tokendatabase").toString();
+    deckPath = getSafeConfigPath("paths/decks", dataPath + "/decks/");
+    replaysPath = getSafeConfigPath("paths/replays", dataPath + "/replays/");
+    picsPath = getSafeConfigPath("paths/pics", dataPath + "/pics/");
+    // this has never been exposed as an user-configurable setting
+    customPicsPath = getSafeConfigPath("paths/custompics", picsPath + "/CUSTOM/");
+    // this has never been exposed as an user-configurable setting
+    customCardDatabasePath = getSafeConfigPath("paths/customsets", dataPath + "/customsets/");    
 
-    handBgPath = settings->value("zonebg/hand").toString();
-    stackBgPath = settings->value("zonebg/stack").toString();
-    tableBgPath = settings->value("zonebg/table").toString();
-    playerBgPath = settings->value("zonebg/playerarea").toString();
-    cardBackPicturePath = settings->value("paths/cardbackpicture").toString();
+    cardDatabasePath = getSafeConfigFilePath("paths/carddatabase", dataPath + "/cards.xml");
+    tokenDatabasePath = getSafeConfigFilePath("paths/tokendatabase", dataPath + "/tokens.xml");
+
+    themeName = settings->value("theme/name").toString();
 
     // we only want to reset the cache once, then its up to the user
     bool updateCache = settings->value("revert/pixmapCacheSize", false).toBool();
@@ -35,20 +191,16 @@ SettingsCache::SettingsCache()
         pixmapCacheSize = PIXMAPCACHE_SIZE_DEFAULT;
 
     picDownload = settings->value("personal/picturedownload", true).toBool();
-    picDownloadHq = settings->value("personal/picturedownloadhq", true).toBool();
 
     picUrl = settings->value("personal/picUrl", PIC_URL_DEFAULT).toString();
-    picUrlHq = settings->value("personal/picUrlHq", PIC_URL_HQ_DEFAULT).toString();
     picUrlFallback = settings->value("personal/picUrlFallback", PIC_URL_FALLBACK).toString();
-    picUrlHqFallback = settings->value("personal/picUrlHqFallback", PIC_URL_HQ_FALLBACK).toString();
 
     mainWindowGeometry = settings->value("interface/main_window_geometry").toByteArray();
     notificationsEnabled = settings->value("interface/notificationsenabled", true).toBool();
     spectatorNotificationsEnabled = settings->value("interface/specnotificationsenabled", false).toBool();
     doubleClickToPlay = settings->value("interface/doubleclicktoplay", true).toBool();
-    playToStack = settings->value("interface/playtostack", false).toBool();
+    playToStack = settings->value("interface/playtostack", true).toBool();
     annotateTokens = settings->value("interface/annotatetokens", false).toBool();
-    cardInfoMinimized = settings->value("interface/cardinfominimized", 0).toInt();
     tabGameSplitterSizes = settings->value("interface/tabgame_splittersizes").toByteArray();
     displayCardNames = settings->value("cards/displaycardnames", true).toBool();
     horizontalHand = settings->value("hand/horizontal", true).toBool();
@@ -56,6 +208,7 @@ SettingsCache::SettingsCache()
     minPlayersForMultiColumnLayout = settings->value("interface/min_players_multicolumn", 5).toInt();
     tapAnimation = settings->value("cards/tapanimation", true).toBool();
     chatMention = settings->value("chat/mention", true).toBool();
+    chatMentionCompleter = settings->value("chat/mentioncompleter", true).toBool();
     chatMentionForeground = settings->value("chat/mentionforeground", true).toBool();
     chatHighlightForeground = settings->value("chat/highlightforeground", true).toBool();
     chatMentionColor = settings->value("chat/mentioncolor", "A6120D").toString();
@@ -66,7 +219,7 @@ SettingsCache::SettingsCache()
     zoneViewPileView = settings->value("zoneview/pileview", true).toBool();
 
     soundEnabled = settings->value("sound/enabled", false).toBool();
-    soundPath = settings->value("sound/path").toString();
+    soundThemeName = settings->value("sound/theme").toString();
 
     priceTagFeature = settings->value("deckeditor/pricetags", false).toBool();
     priceTagSource = settings->value("deckeditor/pricetagsource", 0).toInt();
@@ -74,11 +227,10 @@ SettingsCache::SettingsCache()
     ignoreUnregisteredUsers = settings->value("chat/ignore_unregistered", false).toBool();
     ignoreUnregisteredUserMessages = settings->value("chat/ignore_unregistered_messages", false).toBool();
 
-    attemptAutoConnect = settings->value("server/auto_connect", 0).toBool();
-
     scaleCards = settings->value("cards/scaleCards", true).toBool();
     showMessagePopups = settings->value("chat/showmessagepopups", true).toBool();
     showMentionPopups = settings->value("chat/showmentionpopups", true).toBool();
+    roomHistory = settings->value("chat/roomhistory", true).toBool();
 
     leftJustified = settings->value("interface/leftjustified", false).toBool();
 
@@ -95,8 +247,8 @@ SettingsCache::SettingsCache()
     spectatorsNeedPassword = settings->value("game/spectatorsneedpassword", false).toBool();
     spectatorsCanTalk = settings->value("game/spectatorscantalk", false).toBool();
     spectatorsCanSeeEverything = settings->value("game/spectatorscanseeeverything", false).toBool();
+    rememberGameSettings = settings->value("game/remembergamesettings", true).toBool();
     clientID = settings->value("personal/clientid", "notset").toString();
-
 }
 
 void SettingsCache::setCardInfoViewMode(const int _viewMode) {
@@ -136,6 +288,11 @@ void SettingsCache::setShowMentionPopups(const int _showMentionPopus) {
     settings->setValue("chat/showmentionpopups", showMentionPopups);
 }
 
+void SettingsCache::setRoomHistory(const int _roomHistory) {
+    roomHistory = _roomHistory;
+    settings->setValue("chat/roomhistory", roomHistory);
+}
+
 void SettingsCache::setLang(const QString &_lang)
 {
     lang = _lang;
@@ -159,6 +316,8 @@ void SettingsCache::setPicsPath(const QString &_picsPath)
 {
     picsPath = _picsPath;
     settings->setValue("paths/pics", picsPath);
+    // get a new value for customPicsPath, currently derived from picsPath
+    customPicsPath = getSafeConfigPath("paths/custompics", picsPath + "CUSTOM/");
     emit picsPathChanged();
 }
 
@@ -173,42 +332,14 @@ void SettingsCache::setTokenDatabasePath(const QString &_tokenDatabasePath)
 {
     tokenDatabasePath = _tokenDatabasePath;
     settings->setValue("paths/tokendatabase", tokenDatabasePath);
-    emit tokenDatabasePathChanged();
+    emit cardDatabasePathChanged();
 }
 
-void SettingsCache::setHandBgPath(const QString &_handBgPath)
+void SettingsCache::setThemeName(const QString &_themeName)
 {
-    handBgPath = _handBgPath;
-    settings->setValue("zonebg/hand", handBgPath);
-    emit handBgPathChanged();
-}
-
-void SettingsCache::setStackBgPath(const QString &_stackBgPath)
-{
-    stackBgPath = _stackBgPath;
-    settings->setValue("zonebg/stack", stackBgPath);
-    emit stackBgPathChanged();
-}
-
-void SettingsCache::setTableBgPath(const QString &_tableBgPath)
-{
-    tableBgPath = _tableBgPath;
-    settings->setValue("zonebg/table", tableBgPath);
-    emit tableBgPathChanged();
-}
-
-void SettingsCache::setPlayerBgPath(const QString &_playerBgPath)
-{
-    playerBgPath = _playerBgPath;
-    settings->setValue("zonebg/playerarea", playerBgPath);
-    emit playerBgPathChanged();
-}
-
-void SettingsCache::setCardBackPicturePath(const QString &_cardBackPicturePath)
-{
-    cardBackPicturePath = _cardBackPicturePath;
-    settings->setValue("paths/cardbackpicture", cardBackPicturePath);
-    emit cardBackPicturePathChanged();
+    themeName = _themeName;
+    settings->setValue("theme/name", themeName);
+    emit themeChanged();
 }
 
 void SettingsCache::setPicDownload(int _picDownload)
@@ -218,35 +349,16 @@ void SettingsCache::setPicDownload(int _picDownload)
     emit picDownloadChanged();
 }
 
-void SettingsCache::setPicDownloadHq(int _picDownloadHq)
-{
-    picDownloadHq = _picDownloadHq;
-    settings->setValue("personal/picturedownloadhq", picDownloadHq);
-    emit picDownloadHqChanged();
-}
-
 void SettingsCache::setPicUrl(const QString &_picUrl)
 {
     picUrl = _picUrl;
     settings->setValue("personal/picUrl", picUrl);
 }
 
-void SettingsCache::setPicUrlHq(const QString &_picUrlHq)
-{
-    picUrlHq = _picUrlHq;
-    settings->setValue("personal/picUrlHq", picUrlHq);
-}
-
 void SettingsCache::setPicUrlFallback(const QString &_picUrlFallback)
 {
     picUrlFallback = _picUrlFallback;
     settings->setValue("personal/picUrlFallback", picUrlFallback);
-}
-
-void SettingsCache::setPicUrlHqFallback(const QString &_picUrlHqFallback)
-{
-    picUrlHqFallback = _picUrlHqFallback;
-    settings->setValue("personal/picUrlHqFallback", picUrlHqFallback);
 }
 
 void SettingsCache::setNotificationsEnabled(int _notificationsEnabled)
@@ -276,12 +388,6 @@ void SettingsCache::setAnnotateTokens(int _annotateTokens)
 {
     annotateTokens = _annotateTokens;
     settings->setValue("interface/annotatetokens", annotateTokens);
-}
-
-void SettingsCache::setCardInfoMinimized(int _cardInfoMinimized)
-{
-        cardInfoMinimized = _cardInfoMinimized;
-    settings->setValue("interface/cardinfominimized", cardInfoMinimized);
 }
 
 void SettingsCache::setTabGameSplitterSizes(const QByteArray &_tabGameSplitterSizes)
@@ -329,6 +435,13 @@ void SettingsCache::setChatMention(int _chatMention) {
     settings->setValue("chat/mention", chatMention);
 }
 
+void SettingsCache::setChatMentionCompleter(const int _enableMentionCompleter)
+{
+    chatMentionCompleter = _enableMentionCompleter;
+    settings->setValue("chat/mentioncompleter", chatMentionCompleter);
+    emit chatMentionCompleterChanged();
+}
+
 void SettingsCache::setChatMentionForeground(int _chatMentionForeground) {
     chatMentionForeground = _chatMentionForeground;
     settings->setValue("chat/mentionforeground", chatMentionForeground);
@@ -373,11 +486,11 @@ void SettingsCache::setSoundEnabled(int _soundEnabled)
     emit soundEnabledChanged();
 }
 
-void SettingsCache::setSoundPath(const QString &_soundPath)
+void SettingsCache::setSoundThemeName(const QString &_soundThemeName)
 {
-    soundPath = _soundPath;
-    settings->setValue("sound/path", soundPath);
-    emit soundPathChanged();
+    soundThemeName = _soundThemeName;
+    settings->setValue("sound/theme", soundThemeName);
+    emit soundThemeChanged();
 }
 
 void SettingsCache::setPriceTagFeature(int _priceTagFeature)
@@ -409,12 +522,6 @@ void SettingsCache::setMainWindowGeometry(const QByteArray &_mainWindowGeometry)
 {
     mainWindowGeometry = _mainWindowGeometry;
     settings->setValue("interface/main_window_geometry", mainWindowGeometry);
-}
-
-void SettingsCache::setAutoConnect(const bool &_autoConnect)
-{
-    attemptAutoConnect = _autoConnect;
-    settings->setValue("server/auto_connect", attemptAutoConnect ? 1 : 0);
 }
 
 void SettingsCache::setPixmapCacheSize(const int _pixmapCacheSize)
@@ -514,4 +621,16 @@ void SettingsCache::setSpectatorsCanSeeEverything(const bool _spectatorsCanSeeEv
 {
     spectatorsCanSeeEverything = _spectatorsCanSeeEverything;
     settings->setValue("game/spectatorscanseeeverything", spectatorsCanSeeEverything);
+}
+
+void SettingsCache::setRememberGameSettings(const bool _rememberGameSettings)
+{
+    rememberGameSettings = _rememberGameSettings;
+    settings->setValue("game/remembergamesettings", rememberGameSettings);
+}
+
+void SettingsCache::setNotifyAboutUpdate(int _notifyaboutupdate)
+{
+    notifyAboutUpdates = _notifyaboutupdate;
+    settings->setValue("personal/updatenotification", notifyAboutUpdates);
 }

@@ -12,11 +12,6 @@
 #include "main.h"
 #include "carddatabase.h"
 
-#if QT_VERSION < 0x050000
-    // for Qt::escape() 
-    #include <QtGui/qtextdocument.h>
-#endif
-
 /**
  * Constructor.
  *
@@ -60,7 +55,9 @@ void DBPriceUpdater::updatePrices()
     bool bNotFirst=false;
 
     for (int i = 0; i < cards.size(); ++i) {
-        card = db->getCard(cards[i], false);
+        card = db->getCard(cards[i]);
+        if(!card)
+            continue;
         sets = card->getSets();
         for(int j = 0; j < sets.size(); ++j)
         {
@@ -135,12 +132,7 @@ void DBPriceUpdater::downloadFinished()
     if(resultMap.contains("errors"))
     {
         QMessageBox::critical(this, tr("Error"), tr("A problem has occured while fetching card prices:") + 
-            "<br/>" +
-#if QT_VERSION < 0x050000
-            Qt::escape(resultMap["errors"].toList().first().toString())
-#else
-            resultMap["errors"].toList().first().toString().toHtmlEscaped()
-#endif
+            "<br/>" + resultMap["errors"].toList().first().toString().toHtmlEscaped()
         );
         reply->deleteLater();
         if(urls.isEmpty())

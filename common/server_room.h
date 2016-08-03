@@ -9,6 +9,7 @@
 #include <QReadWriteLock>
 #include "serverinfo_user_container.h"
 #include "pb/response.pb.h"
+#include "pb/serverinfo_chat_message.pb.h"
 
 class Server_DatabaseInterface;
 class Server_ProtocolHandler;
@@ -30,8 +31,10 @@ signals:
     void gameListChanged(const ServerInfo_Game &gameInfo);
 private:
     int id;
+    int chatHistorySize;
     QString name;
     QString description;
+    QString permissionLevel;
     bool autoJoin;
     QString joinMessage;
     QStringList gameTypes;
@@ -39,16 +42,19 @@ private:
     QMap<int, ServerInfo_Game> externalGames;
     QMap<QString, Server_ProtocolHandler *> users;
     QMap<QString, ServerInfo_User_Container> externalUsers;
+    QList<ServerInfo_ChatMessage> chatHistory;
 private slots:
     void broadcastGameListUpdate(const ServerInfo_Game &gameInfo, bool sendToIsl = true);
 public:
     mutable QReadWriteLock usersLock;
     mutable QReadWriteLock gamesLock;
-    Server_Room(int _id, const QString &_name, const QString &_description, bool _autoJoin, const QString &_joinMessage, const QStringList &_gameTypes, Server *parent);
+    mutable QReadWriteLock historyLock;
+    Server_Room(int _id, int _chatHistorySize, const QString &_name, const QString &_description, const QString &_permissionLevel, bool _autoJoin, const QString &_joinMessage, const QStringList &_gameTypes, Server *parent );
     ~Server_Room();
     int getId() const { return id; }
     QString getName() const { return name; }
     QString getDescription() const { return description; }
+    QString getRoomPermission() const { return permissionLevel; }
     bool getAutoJoin() const { return autoJoin; }
     QString getJoinMessage() const { return joinMessage; }
     const QStringList &getGameTypes() const { return gameTypes; }
@@ -58,6 +64,7 @@ public:
     const ServerInfo_Room &getInfo(ServerInfo_Room &result, bool complete, bool showGameTypes = false, bool includeExternalData = true) const;
     int getGamesCreatedByUser(const QString &name) const;
     QList<ServerInfo_Game> getGamesOfUser(const QString &name) const;
+    QList<ServerInfo_ChatMessage> & getChatHistory() { return chatHistory; }
     
     void addClient(Server_ProtocolHandler *client);
     void removeClient(Server_ProtocolHandler *client);

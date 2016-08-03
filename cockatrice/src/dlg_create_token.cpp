@@ -23,17 +23,18 @@ DlgCreateToken::DlgCreateToken(const QStringList &_predefinedTokens, QWidget *pa
     nameLabel = new QLabel(tr("&Name:"));
     nameEdit = new QLineEdit(tr("Token"));
     nameEdit->selectAll();
+    connect(nameEdit, SIGNAL(textChanged(const QString &)), this, SLOT(updateSearch(const QString &)));
     nameLabel->setBuddy(nameEdit);
 
     colorLabel = new QLabel(tr("C&olor:"));
     colorEdit = new QComboBox;
-    colorEdit->addItem(tr("white"), "w");
-    colorEdit->addItem(tr("blue"), "u");
-    colorEdit->addItem(tr("black"), "b");
-    colorEdit->addItem(tr("red"), "r");
-    colorEdit->addItem(tr("green"), "g");
-    colorEdit->addItem(tr("multicolor"), "m");
-    colorEdit->addItem(tr("colorless"), QString());
+    colorEdit->addItem(tr("white"), QChar('w'));
+    colorEdit->addItem(tr("blue"), QChar('u'));
+    colorEdit->addItem(tr("black"), QChar('b'));
+    colorEdit->addItem(tr("red"), QChar('r'));
+    colorEdit->addItem(tr("green"), QChar('g'));
+    colorEdit->addItem(tr("multicolor"), QChar('m'));
+    colorEdit->addItem(tr("colorless"), QChar());
     colorLabel->setBuddy(colorEdit);
 
     ptLabel = new QLabel(tr("&P/T:"));
@@ -62,9 +63,8 @@ DlgCreateToken::DlgCreateToken(const QStringList &_predefinedTokens, QWidget *pa
     tokenDataGroupBox->setLayout(grid);
     
     cardDatabaseModel = new CardDatabaseModel(db, this);
-    cardDatabaseDisplayModel = new CardDatabaseDisplayModel(this);
+    cardDatabaseDisplayModel = new TokenDisplayModel(this);
     cardDatabaseDisplayModel->setSourceModel(cardDatabaseModel);
-    cardDatabaseDisplayModel->setIsToken(CardDatabaseDisplayModel::ShowTrue);
     
     chooseTokenFromAllRadioButton = new QRadioButton(tr("Show &all tokens"));
     connect(chooseTokenFromAllRadioButton, SIGNAL(toggled(bool)), this, SLOT(actChooseTokenFromAll(bool)));
@@ -84,11 +84,8 @@ DlgCreateToken::DlgCreateToken(const QStringList &_predefinedTokens, QWidget *pa
     chooseTokenView->setWordWrap(true);
     chooseTokenView->setColumnWidth(0, 130);
     chooseTokenView->setColumnWidth(3, 178);
-#if QT_VERSION < 0x050000
-    chooseTokenView->header()->setResizeMode(4, QHeaderView::ResizeToContents);
-#else
     chooseTokenView->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-#endif
+
     connect(chooseTokenView->selectionModel(), SIGNAL(currentRowChanged(QModelIndex, QModelIndex)), this, SLOT(tokenSelectionChanged(QModelIndex, QModelIndex)));
     
     if (predefinedTokens.isEmpty())
@@ -132,14 +129,33 @@ DlgCreateToken::DlgCreateToken(const QStringList &_predefinedTokens, QWidget *pa
 void DlgCreateToken::tokenSelectionChanged(const QModelIndex &current, const QModelIndex & /*previous*/)
 {
     const QModelIndex realIndex = cardDatabaseDisplayModel->mapToSource(current);
-    const CardInfo *cardInfo = current.row() >= 0 ? cardDatabaseModel->getCard(realIndex.row()) : db->getCard();
+    const CardInfo *cardInfo = current.row() >= 0 ? cardDatabaseModel->getCard(realIndex.row()) : 0;
     
-    nameEdit->setText(cardInfo->getName());
-    const QString cardColor = cardInfo->getColors().isEmpty() ? QString() : (cardInfo->getColors().size() > 1 ? QString("m") : cardInfo->getColors().first());
-    colorEdit->setCurrentIndex(colorEdit->findData(cardColor, Qt::UserRole, Qt::MatchFixedString));
-    ptEdit->setText(cardInfo->getPowTough());
-    if(settingsCache->getAnnotateTokens())
-        annotationEdit->setText(cardInfo->getText());
+    if(cardInfo)
+    {
+        updateSearchFieldWithoutUpdatingFilter(cardInfo->getName());
+        const QChar cardColor = cardInfo->getColorChar();
+        colorEdit->setCurrentIndex(colorEdit->findData(cardColor, Qt::UserRole, Qt::MatchFixedString));
+        ptEdit->setText(cardInfo->getPowTough());
+        if(settingsCache->getAnnotateTokens())
+            annotationEdit->setText(cardInfo->getText());
+    } else {
+        nameEdit->setText("");
+        colorEdit->setCurrentIndex(colorEdit->findData(QString(), Qt::UserRole, Qt::MatchFixedString));
+        ptEdit->setText("");
+        annotationEdit->setText("");
+    }
+}
+
+void DlgCreateToken::updateSearchFieldWithoutUpdatingFilter(const QString &newValue) const {
+    nameEdit->blockSignals(true);
+    nameEdit->setText(newValue);
+    nameEdit->blockSignals(false);
+}
+
+void DlgCreateToken::updateSearch(const QString &search)
+{
+    cardDatabaseDisplayModel->setCardName(search);
 }
 
 void DlgCreateToken::actChooseTokenFromAll(bool checked)
@@ -166,7 +182,7 @@ QString DlgCreateToken::getName() const
 
 QString DlgCreateToken::getColor() const
 {
-    return colorEdit->itemData(colorEdit->currentIndex()).toString();
+    return QString(colorEdit->itemData(colorEdit->currentIndex()).toChar());
 }
 
 QString DlgCreateToken::getPT() const

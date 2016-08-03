@@ -18,7 +18,10 @@
 #include "pb/event_user_message.pb.h"
 #include "pb/event_game_joined.pb.h"
 #include "pb/event_room_say.pb.h"
+#include "pb/serverinfo_user.pb.h"
 #include <google/protobuf/descriptor.h>
+#include "featureset.h"
+
 
 Server_ProtocolHandler::Server_ProtocolHandler(Server *_server, Server_DatabaseInterface *_databaseInterface, QObject *parent)
     : QObject(parent),
@@ -381,12 +384,38 @@ Response::ResponseCode Server_ProtocolHandler::cmdPing(const Command_Ping & /*cm
 Response::ResponseCode Server_ProtocolHandler::cmdLogin(const Command_Login &cmd, ResponseContainer &rc)
 {
     QString userName = QString::fromStdString(cmd.user_name()).simplified();
-    QString clientid = QString::fromStdString(cmd.clientid()).simplified();
-    if (userName.isEmpty() || (userInfo != 0))
+    QString clientId = QString::fromStdString(cmd.clientid()).simplified();
+    QString clientVersion = QString::fromStdString(cmd.clientver()).simplified();
+
+    if (userInfo != 0)
         return Response::RespContextError;
+
+    // check client feature set against server feature set
+    FeatureSet features;
+    QMap<QString, bool> receivedClientFeatures;
+    QMap<QString, bool> missingClientFeatures;
+
+    for (int i = 0; i < cmd.clientfeatures().size(); ++i)
+        receivedClientFeatures.insert(QString::fromStdString(cmd.clientfeatures(i)).simplified(), false);
+
+    missingClientFeatures = features.identifyMissingFeatures(receivedClientFeatures, server->getServerRequiredFeatureList());
+
+    if (!missingClientFeatures.isEmpty()) {
+        if (features.isRequiredFeaturesMissing(missingClientFeatures, server->getServerRequiredFeatureList())) {
+            Response_Login *re = new Response_Login;
+            re->set_denied_reason_str("Client upgrade required");
+            QMap<QString, bool>::iterator i;
+            for (i = missingClientFeatures.begin(); i != missingClientFeatures.end(); ++i)
+                re->add_missing_features(i.key().toStdString().c_str());
+            rc.setResponseExtension(re);
+            return Response::RespClientUpdateRequired;
+        }
+    }
+
     QString reasonStr;
     int banSecondsLeft = 0;
-    AuthenticationResult res = server->loginUser(this, userName, QString::fromStdString(cmd.password()), reasonStr, banSecondsLeft, clientid);
+    QString connectionType = getConnectionType();
+    AuthenticationResult res = server->loginUser(this, userName, QString::fromStdString(cmd.password()), reasonStr, banSecondsLeft, clientId, clientVersion, connectionType);
     switch (res) {
         case UserIsBanned: {
             Response_Login *re = new Response_Login;
@@ -405,6 +434,7 @@ Response::ResponseCode Server_ProtocolHandler::cmdLogin(const Command_Login &cmd
             return Response::RespUsernameInvalid;
         }
         case RegistrationRequired: return Response::RespRegistrationRequired;
+        case ClientIdRequired: return Response::RespClientIdRequired;
         case UserIsInactive: return Response::RespAccountNotActivated;
         default: authState = res;
     }
@@ -425,6 +455,13 @@ Response::ResponseCode Server_ProtocolHandler::cmdLogin(const Command_Login &cmd
         QMapIterator<QString, ServerInfo_User> ignoreIterator(databaseInterface->getIgnoreList(userName));
         while (ignoreIterator.hasNext())
             re->add_ignore_list()->CopyFrom(ignoreIterator.next().value());
+    }
+
+    // return to client any missing features the server has that the client does not
+    if (!missingClientFeatures.isEmpty()) {
+        QMap<QString, bool>::iterator i;
+        for (i = missingClientFeatures.begin(); i != missingClientFeatures.end(); ++i)
+            re->add_missing_features(i.key().toStdString().c_str());
     }
 
     joinPersistentGames(rc);
@@ -501,11 +538,13 @@ Response::ResponseCode Server_ProtocolHandler::cmdGetUserInfo(const Command_GetU
         QReadLocker locker(&server->clientsLock);
 
         ServerInfo_User_Container *infoSource = server->findUser(userName);
-        if (!infoSource)
-            return Response::RespNameNotFound;
-
-        re->mutable_user_info()->CopyFrom(infoSource->copyUserInfo(true, false, userInfo->user_level() & ServerInfo_User::IsModerator));
+        if (!infoSource) {
+            re->mutable_user_info()->CopyFrom(databaseInterface->getUserData(userName,true));
+        } else {
+            re->mutable_user_info()->CopyFrom(infoSource->copyUserInfo(true, false, userInfo->user_level() & ServerInfo_User::IsModerator));
+        }
     }
+
 
     rc.setResponseExtension(re);
     return Response::RespOk;
@@ -539,12 +578,43 @@ Response::ResponseCode Server_ProtocolHandler::cmdJoinRoom(const Command_JoinRoo
     if (!r)
         return Response::RespNameNotFound;
 
+    QString roomPermission = r->getRoomPermission().toLower();
+    if (roomPermission != "none"){
+        if (roomPermission == "registered") {
+            if (!(userInfo->user_level() & ServerInfo_User::IsRegistered))
+                return Response::RespUserLevelTooLow;
+        }
+
+        if (roomPermission == "moderator"){
+            if (!(userInfo->user_level() & ServerInfo_User::IsModerator))
+                return Response::RespUserLevelTooLow;
+        }
+
+        if (roomPermission == "administrator"){
+            if (!(userInfo->user_level() & ServerInfo_User::IsAdmin))
+                return Response::RespUserLevelTooLow;
+        }
+    }
+
     r->addClient(this);
     rooms.insert(r->getId(), r);
 
     Event_RoomSay joinMessageEvent;
     joinMessageEvent.set_message(r->getJoinMessage().toStdString());
+    joinMessageEvent.set_message_type(Event_RoomSay::Welcome);
     rc.enqueuePostResponseItem(ServerMessage::ROOM_EVENT, r->prepareRoomEvent(joinMessageEvent));
+
+    QReadLocker chatHistoryLocker(&r->historyLock);
+    QList<ServerInfo_ChatMessage> chatHistory = r->getChatHistory();
+    ServerInfo_ChatMessage chatMessage;
+    for (int i = 0; i < chatHistory.size(); ++i) {
+        chatMessage = chatHistory.at(i);
+        Event_RoomSay roomChatHistory;
+        roomChatHistory.set_message(chatMessage.sender_name() + ": " + chatMessage.message());
+        roomChatHistory.set_message_type(Event_RoomSay::ChatHistory);
+        roomChatHistory.set_time_of(QDateTime::fromString(QString::fromStdString(chatMessage.time())).toMSecsSinceEpoch());
+        rc.enqueuePostResponseItem(ServerMessage::ROOM_EVENT, r->prepareRoomEvent(roomChatHistory));
+    }
 
     Response_JoinRoom *re = new Response_JoinRoom;
     r->getInfo(*re->mutable_room_info(), true);
@@ -631,7 +701,9 @@ Response::ResponseCode Server_ProtocolHandler::cmdCreateGame(const Command_Creat
     if (description.size() > 60)
         description = description.left(60);
 
-    Server_Game *game = new Server_Game(copyUserInfo(false), gameId, description, QString::fromStdString(cmd.password()), cmd.max_players(), gameTypes, cmd.only_buddies(), cmd.only_registered(), cmd.spectators_allowed(), cmd.spectators_need_password(), cmd.spectators_can_talk(), cmd.spectators_see_everything(), room);
+    // When server doesn't permit registered users to exist, do not honor only-reg setting
+    bool onlyRegisteredUsers = cmd.only_registered() && (server->permitUnregisteredUsers());
+    Server_Game *game = new Server_Game(copyUserInfo(false), gameId, description, QString::fromStdString(cmd.password()), cmd.max_players(), gameTypes, cmd.only_buddies(), onlyRegisteredUsers, cmd.spectators_allowed(), cmd.spectators_need_password(), cmd.spectators_can_talk(), cmd.spectators_see_everything(), room);
     game->addPlayer(this, rc, false, false);
     room->addGame(game);
 

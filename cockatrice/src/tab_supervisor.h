@@ -18,10 +18,12 @@ class TabAdmin;
 class TabMessage;
 class TabUserLists;
 class TabDeckEditor;
+class TabLog;
 class RoomEvent;
 class GameEventContainer;
 class Event_GameJoined;
 class Event_UserMessage;
+class Event_NotifyUser;
 class ServerInfo_Room;
 class ServerInfo_User;
 class GameReplay;
@@ -43,7 +45,6 @@ class TabSupervisor : public QTabWidget {
     Q_OBJECT
 private:
     ServerInfo_User *userInfo;
-    QIcon *tabChangedIcon;
     AbstractClient *client;
     QList<AbstractClient *> localClients;
     TabServer *tabServer;
@@ -51,6 +52,7 @@ private:
     TabDeckStorage *tabDeckStorage;
     TabReplays *tabReplays;
     TabAdmin *tabAdmin;
+    TabLog *tabLog;
     QMap<int, TabRoom *> roomTabs;
     QMap<int, TabGame *> gameTabs;
     QList<TabGame *> replayTabs;
@@ -80,7 +82,7 @@ signals:
     void setMenu(const QList<QMenu *> &newMenuList = QList<QMenu *>());
     void localGameEnded();
     void adminLockChanged(bool lock);
-    void maximize();
+    void showWindowIfHidden();
 public slots:
     TabDeckEditor *addDeckEditorTab(const DeckLoader *deckToOpen);
     void openReplay(GameReplay *replay);
@@ -105,6 +107,7 @@ private slots:
     void processRoomEvent(const RoomEvent &event);
     void processGameEventContainer(const GameEventContainer &cont);
     void processUserMessageEvent(const Event_UserMessage &event);
+    void processNotifyUserEvent(const Event_NotifyUser &event);
 };
 
 #endif

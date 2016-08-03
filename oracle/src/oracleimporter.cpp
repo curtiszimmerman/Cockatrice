@@ -1,9 +1,6 @@
 #include "oracleimporter.h"
-#if QT_VERSION < 0x050000
-    #include <QtGui>
-#else
-    #include <QtWidgets>
-#endif
+
+#include <QtWidgets>
 #include <QDebug>
 
 #include "qt-json/json.h"
@@ -59,6 +56,7 @@ CardInfo *OracleImporter::addCard(const QString &setName,
                                   QString cardName,
                                   bool isToken,
                                   int cardId,
+                                  QString &setNumber,
                                   QString &cardCost,
                                   QString &cmc,
                                   const QString &cardType,
@@ -67,7 +65,9 @@ CardInfo *OracleImporter::addCard(const QString &setName,
                                   const QString &cardText,
                                   const QStringList & colors,
                                   const QStringList & relatedCards,
-                                  bool upsideDown
+                                  const QStringList & reverseRelatedCards,
+                                  bool upsideDown,
+                                  QString &rarity
                                   )
 {
     QStringList cardTextRows = cardText.split("\n");
@@ -95,7 +95,7 @@ CardInfo *OracleImporter::addCard(const QString &setName,
         bool cipt = cardText.contains("Hideaway") || (cardText.contains(cardName + " enters the battlefield tapped") && !cardText.contains(cardName + " enters the battlefield tapped unless"));
         
         // insert the card and its properties
-        card = new CardInfo(this, cardName, isToken, cardCost, cmc, cardType, cardPT, cardText, colors, relatedCards, upsideDown, cardLoyalty, cipt);
+        card = new CardInfo(cardName, isToken, cardCost, cmc, cardType, cardPT, cardText, colors, relatedCards, reverseRelatedCards, upsideDown, cardLoyalty, cipt);
         int tableRow = 1;
         QString mainCardType = card->getMainCardType();
         if ((mainCardType == "Land") || mArtifact)
@@ -109,6 +109,8 @@ CardInfo *OracleImporter::addCard(const QString &setName,
         cards.insert(cardName, card);
     }
     card->setMuId(setName, cardId);
+    card->setSetNumber(setName, setNumber);
+    card->setRarity(setName, rarity);
 
     return card;
 }
@@ -146,7 +148,10 @@ int OracleImporter::importTextSpoiler(CardSet *set, const QVariant &data)
     QString cardText;
     QStringList colors;
     QStringList relatedCards;
+    QStringList reverseRelatedCards; // dummy
     int cardId;
+    QString setNumber;
+    QString rarity;
     int cardLoyalty;
     bool upsideDown = false;
     QMap<int, QVariantMap> splitCards;
@@ -177,6 +182,8 @@ int OracleImporter::importTextSpoiler(CardSet *set, const QVariant &data)
         cardPT = map.contains("power") || map.contains("toughness") ? map.value("power").toString() + QString('/') + map.value("toughness").toString() : QString("");
         cardText = map.contains("text") ? map.value("text").toString() : QString("");
         cardId = map.contains("multiverseid") ? map.value("multiverseid").toInt() : 0;
+        setNumber = map.contains("number") ? map.value("number").toString() : QString("");
+        rarity = map.contains("rarity") ? map.value("rarity").toString() : QString("");
         cardLoyalty = map.contains("loyalty") ? map.value("loyalty").toInt() : 0;
         relatedCards = map.contains("names") ? map.value("names").toStringList() : QStringList();
         relatedCards.removeAll(cardName);
@@ -192,7 +199,7 @@ int OracleImporter::importTextSpoiler(CardSet *set, const QVariant &data)
         colors.clear();
         extractColors(map.value("colors").toStringList(), colors);
 
-        CardInfo *card = addCard(set->getShortName(), cardName, false, cardId, cardCost, cmc, cardType, cardPT, cardLoyalty, cardText, colors, relatedCards, upsideDown);
+        CardInfo *card = addCard(set->getShortName(), cardName, false, cardId, setNumber, cardCost, cmc, cardType, cardPT, cardLoyalty, cardText, colors, relatedCards, reverseRelatedCards, upsideDown, rarity);
 
         if (!set->contains(card)) {
             card->addToSet(set);
@@ -225,6 +232,8 @@ int OracleImporter::importTextSpoiler(CardSet *set, const QVariant &data)
         cardType = "";
         cardPT = "";
         cardText = "";
+        setNumber = ""; 
+        rarity = "";
         colors.clear();
         // this is currently an integer; can't accept 2 values
         cardLoyalty = 0;
@@ -270,16 +279,22 @@ int OracleImporter::importTextSpoiler(CardSet *set, const QVariant &data)
                     cardText += prefix2;
                 cardText += map.value("text").toString();
             }
+            if(map.contains("number"))
+            {
+                if(setNumber.isEmpty())
+                    setNumber = map.value("number").toString();
+            }
 
             extractColors(map.value("colors").toStringList(), colors);
         }
 
         colors.removeDuplicates();
         relatedCards = QStringList();
+        reverseRelatedCards = QStringList();
         upsideDown = false;
 
         // add the card
-        CardInfo *card = addCard(set->getShortName(), cardName, false, muid, cardCost, cmc, cardType, cardPT, cardLoyalty, cardText, colors, relatedCards, upsideDown);
+        CardInfo *card = addCard(set->getShortName(), cardName, false, muid, setNumber, cardCost, cmc, cardType, cardPT, cardLoyalty, cardText, colors, relatedCards, reverseRelatedCards, upsideDown, rarity);
 
         if (!set->contains(card)) {
             card->addToSet(set);

@@ -60,10 +60,9 @@ class PlayerArea : public QObject, public QGraphicsItem {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 private:
-    QBrush bgPixmapBrush;
     QRectF bRect;
 private slots:
-    void updateBgPixmap();
+    void updateBg();
 public:
     enum { Type = typeOther };
     int type() const { return Type; }
@@ -159,6 +158,7 @@ private slots:
     void actPlay();
     void actHide();
     void actPlayFacedown();
+    void refreshShortcuts();
 
 private:
     TabGame *game;

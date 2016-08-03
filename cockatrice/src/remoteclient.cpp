@@ -1,5 +1,10 @@
+#include <QDebug>
+#include <QList>
 #include <QTimer>
 #include <QThread>
+#include <QCryptographicHash>
+#include <QHostInfo>
+#include <QHostAddress>
 #include "remoteclient.h"
 #include "settingscache.h"
 #include "pending_command.h"
@@ -11,6 +16,8 @@
 #include "pb/server_message.pb.h"
 #include "pb/event_server_identification.pb.h"
 #include "settingscache.h"
+#include "main.h"
+#include "version_string.h"
 
 static const unsigned int protocolVersion = 14;
 
@@ -78,7 +85,7 @@ void RemoteClient::processServerIdentificationEvent(const Event_ServerIdentifica
         cmdRegister.set_gender((ServerInfo_User_Gender) gender);
         cmdRegister.set_country(country.toStdString());
         cmdRegister.set_real_name(realName.toStdString());
-
+        cmdRegister.set_clientid(getSrvClientID(lastHostname).toStdString());
         PendingCommand *pend = prepareSessionCommand(cmdRegister);
         connect(pend, SIGNAL(finished(Response, CommandContainer, QVariant)), this, SLOT(registerResponse(Response)));
         sendCommand(pend);
@@ -102,14 +109,19 @@ void RemoteClient::processServerIdentificationEvent(const Event_ServerIdentifica
     doLogin();
 }
 
-void RemoteClient::doLogin()
-{
+void RemoteClient::doLogin() {
     setStatus(StatusLoggingIn);
-
     Command_Login cmdLogin;
     cmdLogin.set_user_name(userName.toStdString());
     cmdLogin.set_password(password.toStdString());
-    cmdLogin.set_clientid(settingsCache->getClientID().toStdString());
+    cmdLogin.set_clientid(getSrvClientID(lastHostname).toStdString());
+    cmdLogin.set_clientver(VERSION_STRING);
+
+    if (!clientFeatures.isEmpty()) {
+        QMap<QString, bool>::iterator i;
+        for (i = clientFeatures.begin(); i != clientFeatures.end(); ++i)
+            cmdLogin.add_clientfeatures(i.key().toStdString().c_str());
+    }
     PendingCommand *pend = prepareSessionCommand(cmdLogin);
     connect(pend, SIGNAL(finished(Response, CommandContainer, QVariant)), this, SLOT(loginResponse(Response)));
     sendCommand(pend);
@@ -136,8 +148,17 @@ void RemoteClient::loginResponse(const Response &response)
         for (int i = resp.ignore_list_size() - 1; i >= 0; --i)
             ignoreList.append(resp.ignore_list(i));
         emit ignoreListReceived(ignoreList);
+
+        if (resp.missing_features_size() > 0 && settingsCache->getNotifyAboutUpdates())
+                emit notifyUserAboutUpdate();
+
     } else {
-        emit loginError(response.response_code(), QString::fromStdString(resp.denied_reason_str()), resp.denied_end_time());
+        QList<QString> missingFeatures;
+        if (resp.missing_features_size() > 0) {
+            for (int i = 0; i < resp.missing_features_size(); ++i)
+                missingFeatures << QString::fromStdString(resp.missing_features(i));
+        }
+        emit loginError(response.response_code(), QString::fromStdString(resp.denied_reason_str()), resp.denied_end_time(), missingFeatures);
         setStatus(StatusDisconnecting);
     }
 }
@@ -244,7 +265,6 @@ void RemoteClient::doConnectToServer(const QString &hostname, unsigned int port,
 
     userName = _userName;
     password = _password;
-    QString clientid = settingsCache->getClientID();
     lastHostname = hostname;
     lastPort = port;
 
@@ -343,4 +363,20 @@ void RemoteClient::activateToServer(const QString &_token)
 void RemoteClient::disconnectFromServer()
 {
     emit sigDisconnectFromServer();
+}
+
+QString RemoteClient::getSrvClientID(const QString _hostname)
+{
+    QString srvClientID = settingsCache->getClientID();
+    QHostInfo hostInfo = QHostInfo::fromName(_hostname);
+    if (!hostInfo.error()) {
+        QHostAddress hostAddress = hostInfo.addresses().first();
+        srvClientID += hostAddress.toString();
+    }
+    else {
+        qDebug() << "Warning: ClientID generation host lookup failure [" << hostInfo.errorString() << "]";
+        srvClientID += _hostname;
+    }
+    QString uniqueServerClientID = QCryptographicHash::hash(srvClientID.toUtf8(), QCryptographicHash::Sha1).toHex().right(15);
+    return uniqueServerClientID;
 }

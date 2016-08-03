@@ -1,15 +1,16 @@
 #include "carddatabasemodel.h"
 #include "filtertree.h"
 
-#define CARDDBMODEL_COLUMNS 5
+#define CARDDBMODEL_COLUMNS 6
 
 CardDatabaseModel::CardDatabaseModel(CardDatabase *_db, QObject *parent)
     : QAbstractListModel(parent), db(_db)
 {
-    connect(db, SIGNAL(cardListChanged()), this, SLOT(updateCardList()));
     connect(db, SIGNAL(cardAdded(CardInfo *)), this, SLOT(cardAdded(CardInfo *)));
     connect(db, SIGNAL(cardRemoved(CardInfo *)), this, SLOT(cardRemoved(CardInfo *)));
-    updateCardList();
+    connect(db, SIGNAL(cardDatabaseEnabledSetsChanged()), this, SLOT(cardDatabaseEnabledSetsChanged()));
+
+    cardDatabaseEnabledSetsChanged();
 }
 
 CardDatabaseModel::~CardDatabaseModel()
@@ -28,31 +29,22 @@ int CardDatabaseModel::columnCount(const QModelIndex &/*parent*/) const
 
 QVariant CardDatabaseModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid())
-        return QVariant();
-    if ((index.row() >= cardList.size()) || (index.column() >= CARDDBMODEL_COLUMNS))
-        return QVariant();
-    if (role != Qt::DisplayRole && role != SortRole)
+    if (!index.isValid() ||
+        index.row() >= cardList.size() || 
+        index.column() >= CARDDBMODEL_COLUMNS || 
+        (role != Qt::DisplayRole && role != SortRole))
         return QVariant();
 
     CardInfo *card = cardList.at(index.row());
     switch (index.column()){
         case NameColumn: return card->getName();
-        case SetListColumn: {
-            QStringList setList;
-            const QList<CardSet *> &sets = card->getSets();
-            for (int i = 0; i < sets.size(); i++)
-            {
-                if(sets[i]->getEnabled())
-                    setList << sets[i]->getShortName();
-            }
-            return setList.join(", ");
-        }
+        case SetListColumn: return card->getSetsNames();
         case ManaCostColumn: return role == SortRole ?
             QString("%1%2").arg(card->getCmc(), 4, QChar('0')).arg(card->getManaCost()) :
             card->getManaCost();
         case CardTypeColumn: return card->getCardType();
         case PTColumn: return card->getPowTough();
+        case ColorColumn: return card->getColors().join("");
         default: return QVariant();
     }
 }
@@ -69,39 +61,9 @@ QVariant CardDatabaseModel::headerData(int section, Qt::Orientation orientation,
         case ManaCostColumn: return QString(tr("Mana cost"));
         case CardTypeColumn: return QString(tr("Card type"));
         case PTColumn: return QString(tr("P/T"));
+        case ColorColumn: return QString(tr("Color(s)"));
         default: return QVariant();
     }
-}
-
-void CardDatabaseModel::updateCardList()
-{
-    beginResetModel();
-
-    for (int i = 0; i < cardList.size(); ++i)
-        disconnect(cardList[i], 0, this, 0);
-    
-    cardList.clear();
-
-    foreach(CardInfo * card, db->getCardList())
-    {
-        bool hasSet = false;
-        foreach(CardSet * set, card->getSets())
-        {
-            if(set->getEnabled())
-            {
-                hasSet = true;
-                break;
-            }
-        }
-
-        if(hasSet)
-        {
-            cardList.append(card);
-            connect(card, SIGNAL(cardInfoChanged(CardInfo *)), this, SLOT(cardInfoChanged(CardInfo *)));
-        }
-    }
-    
-    endResetModel();
 }
 
 void CardDatabaseModel::cardInfoChanged(CardInfo *card)
@@ -113,12 +75,44 @@ void CardDatabaseModel::cardInfoChanged(CardInfo *card)
     emit dataChanged(index(row, 0), index(row, CARDDBMODEL_COLUMNS - 1));
 }
 
+bool CardDatabaseModel::checkCardHasAtLeastOneEnabledSet(CardInfo *card)
+{
+    foreach(CardSet * set, card->getSets())
+    {
+        if(set->getEnabled())
+            return true;
+    }
+
+    return false;
+}
+
+void CardDatabaseModel::cardDatabaseEnabledSetsChanged()
+{
+    // remove all the cards no more present in at least one enabled set
+    foreach(CardInfo * card, cardList)
+    {
+        if(!checkCardHasAtLeastOneEnabledSet(card))
+            cardRemoved(card);
+    }
+
+    // re-check all the card currently not shown, maybe their part of a newly-enabled set
+    foreach(CardInfo * card, db->getCardList())
+    {
+        if(!cardList.contains(card))
+            cardAdded(card);
+    }
+}
+
 void CardDatabaseModel::cardAdded(CardInfo *card)
 {
-    beginInsertRows(QModelIndex(), cardList.size(), cardList.size());
-    cardList.append(card);
-    connect(card, SIGNAL(cardInfoChanged(CardInfo *)), this, SLOT(cardInfoChanged(CardInfo *)));
-    endInsertRows();
+    if(checkCardHasAtLeastOneEnabledSet(card))
+    {
+        // add the card if it's present in at least one enabled set
+        beginInsertRows(QModelIndex(), cardList.size(), cardList.size());
+        cardList.append(card);
+        connect(card, SIGNAL(cardInfoChanged(CardInfo *)), this, SLOT(cardInfoChanged(CardInfo *)));
+        endInsertRows();
+    }
 }
 
 void CardDatabaseModel::cardRemoved(CardInfo *card)
@@ -128,6 +122,7 @@ void CardDatabaseModel::cardRemoved(CardInfo *card)
         return;
     
     beginRemoveRows(QModelIndex(), row, row);
+    disconnect(card, 0, this, 0);
     cardList.removeAt(row);
     endRemoveRows();
 }
@@ -139,8 +134,30 @@ CardDatabaseDisplayModel::CardDatabaseDisplayModel(QObject *parent)
     filterTree = NULL;
     setFilterCaseSensitivity(Qt::CaseInsensitive);
     setSortCaseSensitivity(Qt::CaseInsensitive);
+
+    loadedRowCount = 0;
 }
 
+bool CardDatabaseDisplayModel::canFetchMore(const QModelIndex & index) const
+{
+    return loadedRowCount < sourceModel()->rowCount(index);
+}
+
+void CardDatabaseDisplayModel::fetchMore(const QModelIndex & index)
+{
+    int remainder = sourceModel()->rowCount(index) - loadedRowCount;
+    int itemsToFetch = qMin(100, remainder);
+
+    beginInsertRows(QModelIndex(), loadedRowCount, loadedRowCount+itemsToFetch-1);
+
+    loadedRowCount += itemsToFetch;
+    endInsertRows();
+}
+
+int CardDatabaseDisplayModel::rowCount(const QModelIndex &parent) const
+{
+    return qMin(QSortFilterProxyModel::rowCount(parent), loadedRowCount);
+}
 
 bool CardDatabaseDisplayModel::lessThan(const QModelIndex &left, const QModelIndex &right) const {
 
@@ -171,6 +188,10 @@ bool CardDatabaseDisplayModel::filterAcceptsRow(int sourceRow, const QModelIndex
     if (((isToken == ShowTrue) && !info->getIsToken()) || ((isToken == ShowFalse) && info->getIsToken()))
         return false;
 
+    return rowMatchesCardName(info);
+}
+
+bool CardDatabaseDisplayModel::rowMatchesCardName(CardInfo const *info) const {
     if (!cardName.isEmpty() && !info->getName().contains(cardName, Qt::CaseInsensitive))
         return false;
 
@@ -207,4 +228,22 @@ void CardDatabaseDisplayModel::setFilterTree(FilterTree *filterTree)
 void CardDatabaseDisplayModel::filterTreeChanged()
 {
     invalidate();
+}
+
+TokenDisplayModel::TokenDisplayModel(QObject *parent)
+    : CardDatabaseDisplayModel(parent)
+{
+
+}
+
+bool TokenDisplayModel::filterAcceptsRow(int sourceRow, const QModelIndex & /*sourceParent*/) const
+{
+    CardInfo const *info = static_cast<CardDatabaseModel *>(sourceModel())->getCard(sourceRow);
+    return info->getIsToken() && rowMatchesCardName(info);
+}
+
+int TokenDisplayModel::rowCount(const QModelIndex &parent) const
+{
+    // always load all tokens at start
+    return QSortFilterProxyModel::rowCount(parent);
 }

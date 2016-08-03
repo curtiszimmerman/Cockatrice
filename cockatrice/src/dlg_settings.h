@@ -45,6 +45,8 @@ private slots:
     void tokenDatabasePathButtonClicked();
     void languageBoxChanged(int index);
     void setEnabledStatus(bool);
+    void defaultUrlRestoreButtonClicked();
+    void fallbackUrlRestoreButtonClicked();
 private:
     QStringList findQmFiles();
     QString languageName(const QString &qmFile);
@@ -53,13 +55,14 @@ private:
     QLineEdit *picsPathEdit;
     QLineEdit *cardDatabasePathEdit;
     QLineEdit *tokenDatabasePathEdit;
-    QLineEdit *highQualityURLEdit;
+    QLineEdit *defaultUrlEdit;
+    QLineEdit *fallbackUrlEdit;
     QSpinBox pixmapCacheEdit;
     QGroupBox *personalGroupBox; 
     QGroupBox *pathsGroupBox;
     QComboBox languageBox;
     QCheckBox picDownloadCheckBox;
-    QCheckBox picDownloadHqCheckBox;
+    QCheckBox updateNotificationCheckBox;
     QLabel languageLabel;
     QLabel pixmapCacheLabel;
     QLabel deckPathLabel;
@@ -67,48 +70,28 @@ private:
     QLabel picsPathLabel;
     QLabel cardDatabasePathLabel;
     QLabel tokenDatabasePathLabel;
-    QLabel highQualityURLLabel;
-    QLabel highQualityURLLinkLabel;
+    QLabel defaultUrlLabel;
+    QLabel fallbackUrlLabel;
+    QLabel urlLinkLabel;
     QPushButton clearDownloadedPicsButton;
+    QPushButton defaultUrlRestoreButton;
+    QPushButton fallbackUrlRestoreButton;
 };
 
 class AppearanceSettingsPage : public AbstractSettingsPage {
     Q_OBJECT
 private slots:
-    void handBgClearButtonClicked();
-    void handBgButtonClicked();
-    void stackBgClearButtonClicked();
-    void stackBgButtonClicked();
-    void tableBgClearButtonClicked();
-    void tableBgButtonClicked();
-    void playerAreaBgClearButtonClicked();
-    void playerAreaBgButtonClicked();
-    void cardBackPicturePathClearButtonClicked();
-    void cardBackPicturePathButtonClicked();
-signals:
-    void handBgChanged(const QString &path);
-    void stackBgChanged(const QString &path);
-    void tableBgChanged(const QString &path);
-    void playerAreaBgChanged(const QString &path);
-    void cardBackPicturePathChanged(const QString &path);
+    void themeBoxChanged(int index);
 private:
-    QLabel handBgLabel;
-    QLabel stackBgLabel;
-    QLabel tableBgLabel;
-    QLabel playerAreaBgLabel;
-    QLabel cardBackPicturePathLabel;
+    QLabel themeLabel;
+    QComboBox themeBox;
     QLabel minPlayersForMultiColumnLayoutLabel;
-    QLineEdit *handBgEdit;
-    QLineEdit *stackBgEdit;
-    QLineEdit *tableBgEdit;
-    QLineEdit *playerAreaBgEdit;
-    QLineEdit *cardBackPicturePathEdit;
     QCheckBox displayCardNamesCheckBox;
     QCheckBox cardScalingCheckBox;
     QCheckBox horizontalHandCheckBox;
     QCheckBox leftJustifiedHandCheckBox;
     QCheckBox invertVerticalCoordinateCheckBox;
-    QGroupBox *zoneBgGroupBox;
+    QGroupBox *themeGroupBox;
     QGroupBox *cardsGroupBox;
     QGroupBox *handGroupBox;
     QGroupBox *tableGroupBox;
@@ -168,12 +151,14 @@ private:
     QAction *aAdd;
     QAction *aRemove;
     QCheckBox chatMentionCheckBox;
+    QCheckBox chatMentionCompleterCheckbox;
     QCheckBox invertMentionForeground;
     QCheckBox invertHighlightForeground;
     QCheckBox ignoreUnregUsersMainChat;
     QCheckBox ignoreUnregUserMessages;
     QCheckBox messagePopups;
     QCheckBox mentionPopups;
+    QCheckBox roomHistory;
     QGroupBox *chatGroupBox;
     QGroupBox *highlightGroupBox;
     QGroupBox *messageShortcuts;
@@ -195,20 +180,17 @@ public:
     SoundSettingsPage();
     void retranslateUi();
 private:
+    QLabel themeLabel;
+    QComboBox themeBox;
     QGroupBox *soundGroupBox;
     QPushButton soundTestButton;
     QCheckBox soundEnabledCheckBox;
-    QLabel soundPathLabel;
-    QLineEdit *soundPathEdit;
     QLabel masterVolumeLabel;
     QSlider *masterVolumeSlider;
     QSpinBox *masterVolumeSpinBox;
-signals:
-    void soundPathChanged();
 private slots:
     void masterVolumeChanged(int value);
-    void soundPathClearButtonClicked();
-    void soundPathButtonClicked();
+    void themeBoxChanged(int index);
 };
 
 class DlgSettings : public QDialog {
@@ -223,6 +205,7 @@ private:
     QListWidget *contentsWidget;
     QStackedWidget *pagesWidget;
     QListWidgetItem *generalButton, *appearanceButton, *userInterfaceButton, *deckEditorButton, *messagesButton, *soundButton;
+    QListWidgetItem *shortcutsButton;
     void createIcons();
     void retranslateUi();
 protected:

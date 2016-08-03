@@ -1,42 +1,33 @@
 #include "gamesmodel.h"
 #include "pb/serverinfo_game.pb.h"
 #include "pixmapgenerator.h"
+#include "settingscache.h"
+
 #include <QDebug>
 #include <QIcon>
 #include <QStringList>
 #include <QDateTime>
-#include <QSettings>
-#include <QCryptographicHash>
 
 enum GameListColumn {ROOM, CREATED, DESCRIPTION, CREATOR, GAME_TYPE, RESTRICTIONS, PLAYERS, SPECTATORS};
 
 const QString GamesModel::getGameCreatedString(const int secs) const {
 
     QString ret;
-    if (secs < SECS_PER_MIN)
-        ret = tr("<1m ago");
-    else if (secs < SECS_PER_MIN * 5)
-        ret = tr("<5m ago");
-    else if (secs < SECS_PER_HOUR)
-        ret = tr("%1m ago").arg(QString::number(secs / SECS_PER_MIN));
-    else if (secs < SECS_PER_MIN * 90) {
-        ret = tr("1hr %1m ago").arg(QString::number((secs / SECS_PER_MIN) - 60));
-    } else if (secs < SECS_PER_HOUR * 4) {
-        unsigned int hours = secs / SECS_PER_HOUR;
-        if (secs % SECS_PER_HOUR >= SECS_PER_MIN * 30)
+    if (secs < SECS_PER_MIN * 2) // for first min we display "New"
+        ret = tr("New");
+    else if (secs < SECS_PER_MIN * 10) // from 2 - 10 mins we show the mins
+        ret = QString("%1 min").arg(QString::number(secs / SECS_PER_MIN));
+    else if (secs < SECS_PER_MIN * 60) { // from 10 mins to 1h we aggregate every 10 mins
+        int unitOfTen = secs / SECS_PER_TEN_MIN;
+        QString str = "%1%2";
+        ret = str.arg(QString::number(unitOfTen), "0+ min");
+    } else { // from 1 hr onward we show hrs
+        int hours = secs / SECS_PER_HOUR;
+        if (secs % SECS_PER_HOUR >= SECS_PER_MIN * 30) // if the room is open for 1hr 30 mins, we round to 2hrs
             hours++;
-        ret = tr("%1hr ago").arg(QString::number(hours));
-    } else
-        ret = tr("5+ hrs ago");
-
+        ret = QString("%1+ h").arg(QString::number(hours));
+    }
     return ret;
-
-    /*
-    todo
-    . would like less if()
-    . would like less code repition 
-    */
-
 }
 
 GamesModel::GamesModel(const QMap<int, QString> &_rooms, const QMap<int, GameTypeMap> &_gameTypes, QObject *parent)
@@ -67,6 +58,7 @@ QVariant GamesModel::data(const QModelIndex &index, int role) const
             switch (role) {
                 case Qt::DisplayRole: return getGameCreatedString(secs);
                 case SORT_ROLE: return QVariant(secs);
+                case Qt::TextAlignmentRole: return Qt::AlignCenter;
                 default: return QVariant();
             }
         }
@@ -135,7 +127,7 @@ QVariant GamesModel::data(const QModelIndex &index, int role) const
             case Qt::DisplayRole: 
                 return QString("%1/%2").arg(g.player_count()).arg(g.max_players());
             case Qt::TextAlignmentRole:
-                return Qt::AlignLeft;
+                return Qt::AlignCenter;
             default:
                 return QVariant();
             }
@@ -174,18 +166,32 @@ QVariant GamesModel::data(const QModelIndex &index, int role) const
     }
 }
 
-QVariant GamesModel::headerData(int section, Qt::Orientation orientation, int role) const
+QVariant GamesModel::headerData(int section, Qt::Orientation /*orientation*/, int role) const
 {
-    if ((role != Qt::DisplayRole) || (orientation != Qt::Horizontal))
+    if ((role != Qt::DisplayRole) && (role != Qt::TextAlignmentRole))
         return QVariant();
     switch (section) {
     case ROOM: return tr("Room");
-    case CREATED: return tr("Game Created");
+    case CREATED: {
+        switch(role) {
+            case Qt::DisplayRole:
+                return tr("Age");
+            case Qt::TextAlignmentRole:
+                return Qt::AlignCenter;
+        }
+    }
     case DESCRIPTION: return tr("Description");
     case CREATOR: return tr("Creator");
-    case GAME_TYPE: return tr("Game Type");
+    case GAME_TYPE: return tr("Type");
     case RESTRICTIONS: return tr("Restrictions");
-    case PLAYERS: return tr("Players");
+    case PLAYERS: {
+        switch(role) {
+            case Qt::DisplayRole:
+                return tr("Players");
+            case Qt::TextAlignmentRole:
+                return Qt::AlignCenter;
+        }
+    }
     case SPECTATORS: return tr("Spectators");
     default: return QVariant();
     }
@@ -231,6 +237,11 @@ GamesProxyModel::GamesProxyModel(QObject *parent, ServerInfo_User *_ownUser)
     setDynamicSortFilter(true);
 }
 
+void GamesProxyModel::setShowBuddiesOnlyGames(bool _showBuddiesOnlyGames) {
+    showBuddiesOnlyGames = _showBuddiesOnlyGames;
+    invalidateFilter();
+}
+
 void GamesProxyModel::setUnavailableGamesVisible(bool _unavailableGamesVisible)
 {
     unavailableGamesVisible = _unavailableGamesVisible;
@@ -272,6 +283,7 @@ void GamesProxyModel::resetFilterParameters()
 {
     unavailableGamesVisible = false;
     showPasswordProtectedGames = true;
+    showBuddiesOnlyGames = true;
     gameNameFilter = QString();
     creatorNameFilter = QString();
     gameTypeFilter.clear();
@@ -283,19 +295,17 @@ void GamesProxyModel::resetFilterParameters()
 
 void GamesProxyModel::loadFilterParameters(const QMap<int, QString> &allGameTypes)
 {
-    QSettings settings;
-    settings.beginGroup("filter_games");
 
-    unavailableGamesVisible = settings.value("unavailable_games_visible", false).toBool();
-    showPasswordProtectedGames = settings.value("show_password_protected_games", true).toBool();
-    gameNameFilter = settings.value("game_name_filter", "").toString();
-    maxPlayersFilterMin = settings.value("min_players", 1).toInt();
-    maxPlayersFilterMax = settings.value("max_players", DEFAULT_MAX_PLAYERS_MAX).toInt();
+    unavailableGamesVisible = settingsCache->gameFilters().isUnavailableGamesVisible();
+    showPasswordProtectedGames = settingsCache->gameFilters().isShowPasswordProtectedGames();
+    gameNameFilter = settingsCache->gameFilters().getGameNameFilter();
+    maxPlayersFilterMin = settingsCache->gameFilters().getMinPlayers();
+    maxPlayersFilterMax = settingsCache->gameFilters().getMaxPlayers();
 
     QMapIterator<int, QString> gameTypesIterator(allGameTypes);
     while (gameTypesIterator.hasNext()) {
         gameTypesIterator.next();
-        if (settings.value("game_type/" + hashGameType(gameTypesIterator.value()), false).toBool()) {
+        if (settingsCache->gameFilters().isGameTypeEnabled(gameTypesIterator.value())){
             gameTypeFilter.insert(gameTypesIterator.key());
         }
     }
@@ -305,28 +315,20 @@ void GamesProxyModel::loadFilterParameters(const QMap<int, QString> &allGameType
 
 void GamesProxyModel::saveFilterParameters(const QMap<int, QString> &allGameTypes)
 {
-    QSettings settings;
-    settings.beginGroup("filter_games");
-
-    settings.setValue("unavailable_games_visible", unavailableGamesVisible);
-    settings.setValue(
-        "show_password_protected_games",
-        showPasswordProtectedGames
-        );
-    settings.setValue("game_name_filter", gameNameFilter);
+    settingsCache->gameFilters().setShowBuddiesOnlyGames(showBuddiesOnlyGames);
+    settingsCache->gameFilters().setUnavailableGamesVisible(unavailableGamesVisible);
+    settingsCache->gameFilters().setShowPasswordProtectedGames(showPasswordProtectedGames);
+    settingsCache->gameFilters().setGameNameFilter(gameNameFilter);
     
     QMapIterator<int, QString> gameTypeIterator(allGameTypes);
     while (gameTypeIterator.hasNext()) {
         gameTypeIterator.next();
-
-        settings.setValue(
-            "game_type/" + hashGameType(gameTypeIterator.value()),
-            gameTypeFilter.contains(gameTypeIterator.key())
-            );
+        bool enabled = gameTypeFilter.contains(gameTypeIterator.key());
+        settingsCache->gameFilters().setGameTypeEnabled(gameTypeIterator.value(),enabled);
     }
 
-    settings.setValue("min_players", maxPlayersFilterMin);
-    settings.setValue("max_players", maxPlayersFilterMax);
+    settingsCache->gameFilters().setMinPlayers(maxPlayersFilterMin);
+    settingsCache->gameFilters().setMaxPlayers(maxPlayersFilterMax);
 }
 
 bool GamesProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &/*sourceParent*/) const
@@ -336,6 +338,10 @@ bool GamesProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &/*sourc
         return false;
 
     const ServerInfo_Game &game = model->getGame(sourceRow);
+
+    if (!showBuddiesOnlyGames && game.only_buddies()) {
+        return false;
+    }
     if (!unavailableGamesVisible) {
         if (game.player_count() == game.max_players())
             return false;
@@ -366,8 +372,4 @@ bool GamesProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &/*sourc
         return false;
 
     return true;
-}
-
-QString GamesProxyModel::hashGameType(const QString &gameType) const {
-    return QCryptographicHash::hash(gameType.toUtf8(), QCryptographicHash::Md5).toHex();
 }

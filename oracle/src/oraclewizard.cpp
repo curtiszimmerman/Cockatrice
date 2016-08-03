@@ -1,10 +1,6 @@
 #include <QtGui>
-#if QT_VERSION < 0x050000
-    #include <QDesktopServices>
-#else 
-    #include <QStandardPaths>
-    #include <QtConcurrent>
-#endif
+#include <QStandardPaths>
+#include <QtConcurrent>
 #include <QAbstractButton>
 #include <QBuffer>
 #include <QCheckBox>
@@ -30,13 +26,13 @@
 #include "settingscache.h"
 
 #define ZIP_SIGNATURE "PK"
-#define ALLSETS_URL_FALLBACK "http://mtgjson.com/json/AllSets.json"
+#define ALLSETS_URL_FALLBACK "https://mtgjson.com/json/AllSets.json"
 
 #ifdef HAS_ZLIB
     #include "zip/unzip.h"
-    #define ALLSETS_URL "http://mtgjson.com/json/AllSets.json.zip"
+    #define ALLSETS_URL "https://mtgjson.com/json/AllSets.json.zip"
 #else
-    #define ALLSETS_URL "http://mtgjson.com/json/AllSets.json"
+    #define ALLSETS_URL "https://mtgjson.com/json/AllSets.json"
 #endif
 
 #define TOKENS_URL "https://raw.githubusercontent.com/Cockatrice/Magic-Token/master/tokens.xml"
@@ -45,16 +41,10 @@
 OracleWizard::OracleWizard(QWidget *parent)
     : QWizard(parent)
 {
-    settings = new QSettings(this);
+    settings = new QSettings(settingsCache->getSettingsPath()+"global.ini",QSettings::IniFormat, this);
     connect(settingsCache, SIGNAL(langChanged()), this, SLOT(updateLanguage()));
 
-    importer = new OracleImporter(
-#if QT_VERSION < 0x050000
-        QDesktopServices::storageLocation(QDesktopServices::DataLocation)
-#else
-        QStandardPaths::standardLocations(QStandardPaths::DataLocation).first()
-#endif
-    , this);
+    importer = new OracleImporter(settingsCache->getDataPath(), this);
 
     addPage(new IntroPage);
     addPage(new LoadSetsPage);
@@ -134,7 +124,7 @@ IntroPage::IntroPage(QWidget *parent)
     for (int i = 0; i < qmFiles.size(); i++) {
         QString langName = languageName(qmFiles[i]);
         languageBox->addItem(langName, qmFiles[i]);
-        if ((qmFiles[i] == setLanguage) || (setLanguage.isEmpty() && langName == tr("English")))
+        if ((qmFiles[i] == setLanguage) || (setLanguage.isEmpty() && langName == QCoreApplication::translate("i18n", DEFAULT_LANG_NAME)))
             languageBox->setCurrentIndex(i);
     }
     connect(languageBox, SIGNAL(currentIndexChanged(int)), this, SLOT(languageBoxChanged(int)));
@@ -157,10 +147,13 @@ QStringList IntroPage::findQmFiles()
 
 QString IntroPage::languageName(const QString &qmFile)
 {
+    if(qmFile == DEFAULT_LANG_CODE)
+        return DEFAULT_LANG_NAME;
+
     QTranslator translator;
     translator.load(translationPrefix + "_" + qmFile + ".qm", translationPath);
     
-    return translator.translate("IntroPage", "English");
+    return translator.translate("i18n", DEFAULT_LANG_NAME);
 }
 
 void IntroPage::languageBoxChanged(int index)
@@ -171,11 +164,10 @@ void IntroPage::languageBoxChanged(int index)
 void IntroPage::retranslateUi()
 {
     setTitle(tr("Introduction"));
-    label->setText(tr("This wizard will import the list of sets and cards "
-                          "that will be used by Cockatrice.<br/>You will need to "
-                          "specify an url or a filename that will be used as a "
-                          "source, and then choose the wanted sets from the list "
-                          "of the available ones."));
+    label->setText(tr("This wizard will import the list of sets, cards, and tokens "
+                      "that will be used by Cockatrice."
+                      "\nYou will need to specify a URL or a filename that "
+                      "will be used as a source."));
     languageLabel->setText(tr("Language:"));
 }
 
@@ -226,12 +218,12 @@ void LoadSetsPage::retranslateUi()
 {
     setTitle(tr("Source selection"));
     setSubTitle(tr("Please specify a source for the list of sets and cards. "
-                   "You can specify an url address that will be download or "
+                   "You can specify a URL address that will be downloaded or "
                    "use an existing file from your computer."));
 
-    urlRadioButton->setText(tr("Download url:"));
+    urlRadioButton->setText(tr("Download URL:"));
     fileRadioButton->setText(tr("Local file:"));
-    urlButton->setText(tr("Restore default url"));
+    urlButton->setText(tr("Restore default URL"));
     fileButton->setText(tr("Choose file..."));
 }
 
@@ -272,7 +264,7 @@ bool LoadSetsPage::validatePage()
         QUrl url = QUrl::fromUserInput(urlLineEdit->text());
         if(!url.isValid())
         {
-            QMessageBox::critical(this, tr("Error"), tr("The provided url is not valid."));
+            QMessageBox::critical(this, tr("Error"), tr("The provided URL is not valid."));
             return false;
         }
 
@@ -287,13 +279,7 @@ bool LoadSetsPage::validatePage()
         wizard()->disableButtons();
         setEnabled(false);
 
-        if(!nam)
-            nam = new QNetworkAccessManager(this);
-        QNetworkReply *reply = nam->get(QNetworkRequest(url));
- 
-        connect(reply, SIGNAL(finished()), this, SLOT(actDownloadFinishedSetsFile()));
-        connect(reply, SIGNAL(downloadProgress(qint64, qint64)), this, SLOT(actDownloadProgressSetsFile(qint64, qint64)));
-
+        downloadSetsFile(url);
     } else if(fileRadioButton->isChecked()) {
         QFile setsFile(fileLineEdit->text());
         if(!setsFile.exists())
@@ -316,6 +302,16 @@ bool LoadSetsPage::validatePage()
     return false;
 }
 
+void LoadSetsPage::downloadSetsFile(QUrl url)
+{
+    if(!nam)
+        nam = new QNetworkAccessManager(this);
+    QNetworkReply *reply = nam->get(QNetworkRequest(url));
+
+    connect(reply, SIGNAL(finished()), this, SLOT(actDownloadFinishedSetsFile()));
+    connect(reply, SIGNAL(downloadProgress(qint64, qint64)), this, SLOT(actDownloadProgressSetsFile(qint64, qint64)));
+}
+
 void LoadSetsPage::actDownloadProgressSetsFile(qint64 received, qint64 total)
 {
     if(total > 0)
@@ -328,9 +324,6 @@ void LoadSetsPage::actDownloadProgressSetsFile(qint64 received, qint64 total)
 
 void LoadSetsPage::actDownloadFinishedSetsFile()
 {
-    progressLabel->hide();
-    progressBar->hide();
-
     // check for a reply
     QNetworkReply *reply = static_cast<QNetworkReply *>(sender());
     QNetworkReply::NetworkError errorCode = reply->error();
@@ -343,6 +336,18 @@ void LoadSetsPage::actDownloadFinishedSetsFile()
         reply->deleteLater();
         return;
     }
+
+    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (statusCode == 301 || statusCode == 302) {
+        QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+        qDebug() << "following redirect url:" << redirectUrl.toString();
+        downloadSetsFile(redirectUrl);
+        reply->deleteLater();
+        return;
+    }
+
+    progressLabel->hide();
+    progressBar->hide();
 
     // save allsets.json url, but only if the user customized it and download was successfull
     if(urlLineEdit->text() != QString(ALLSETS_URL))
@@ -485,6 +490,9 @@ void SaveSetsPage::retranslateUi()
                    "Press \"Save\" to save the imported cards to the Cockatrice database."));
 
     defaultPathCheckBox->setText(tr("Save to the default path (recommended)"));
+    #ifdef PORTABLE_BUILD
+    defaultPathCheckBox->setEnabled(false);
+    #endif
 }
 
 void SaveSetsPage::updateTotalProgress(int cardsImported, int /* setIndex */, const QString &setName)
@@ -500,35 +508,19 @@ void SaveSetsPage::updateTotalProgress(int cardsImported, int /* setIndex */, co
 bool SaveSetsPage::validatePage()
 {
     bool ok = false;
-    const QString dataDir = 
-#if QT_VERSION < 0x050000
-        QDesktopServices::storageLocation(QDesktopServices::DataLocation);
-#else
-        QStandardPaths::standardLocations(QStandardPaths::DataLocation).first();
-#endif
-    QSettings* settings = new QSettings(this);
-    QString defaultPath = settings->value("paths/carddatabase").toString();
+    QString defaultPath = settingsCache->getCardDatabasePath();
     QString windowName = tr("Save card database");
     QString fileType = tr("XML; card database (*.xml)");
 
     do {
         QString fileName;
-        if (defaultPath.isEmpty()) {
-            if (defaultPathCheckBox->isChecked())
-                fileName = dataDir + "/cards.xml";
-            else
-                fileName = QFileDialog::getSaveFileName(this, windowName, dataDir + "/cards.xml", fileType);
-            settings->setValue("paths/carddatabase", fileName);
-        }
-        else {
-            if (defaultPathCheckBox->isChecked())
-                fileName = defaultPath;
-            else
-                fileName = QFileDialog::getSaveFileName(this, windowName, defaultPath, fileType);
-        }
-        if (fileName.isEmpty()) {
+        if (defaultPathCheckBox->isChecked())
+            fileName = defaultPath;
+        else
+            fileName = QFileDialog::getSaveFileName(this, windowName, defaultPath, fileType);
+
+        if (fileName.isEmpty())
             return false;
-        }
 
         QFileInfo fi(fileName);
         QDir fileDir(fi.path());
@@ -585,11 +577,11 @@ void LoadTokensPage::retranslateUi()
 {
     setTitle(tr("Tokens source selection"));
     setSubTitle(tr("Please specify a source for the list of tokens. "
-                   "You can specify an url address that will be download or "
+                   "You can specify a URL address that will be downloaded or "
                    "use an existing file from your computer."));
 
-    urlLabel->setText(tr("Download url:"));
-    urlButton->setText(tr("Restore default url"));
+    urlLabel->setText(tr("Download URL:"));
+    urlButton->setText(tr("Restore default URL"));
 }
 
 void LoadTokensPage::actRestoreDefaultUrl()
@@ -606,7 +598,7 @@ bool LoadTokensPage::validatePage()
     QUrl url = QUrl::fromUserInput(urlLineEdit->text());
     if(!url.isValid())
     {
-        QMessageBox::critical(this, tr("Error"), tr("The provided url is not valid."));
+        QMessageBox::critical(this, tr("Error"), tr("The provided URL is not valid."));
         return false;
     }
 
@@ -621,14 +613,18 @@ bool LoadTokensPage::validatePage()
     wizard()->disableButtons();
     setEnabled(false);
 
+    downloadTokensFile(url);
+    return false;
+}
+
+void LoadTokensPage::downloadTokensFile(QUrl url)
+{
     if(!nam)
         nam = new QNetworkAccessManager(this);
     QNetworkReply *reply = nam->get(QNetworkRequest(url));
 
     connect(reply, SIGNAL(finished()), this, SLOT(actDownloadFinishedTokensFile()));
     connect(reply, SIGNAL(downloadProgress(qint64, qint64)), this, SLOT(actDownloadProgressTokensFile(qint64, qint64)));
-
-    return false;
 }
 
 void LoadTokensPage::actDownloadProgressTokensFile(qint64 received, qint64 total)
@@ -643,9 +639,6 @@ void LoadTokensPage::actDownloadProgressTokensFile(qint64 received, qint64 total
 
 void LoadTokensPage::actDownloadFinishedTokensFile()
 {
-    progressLabel->hide();
-    progressBar->hide();
-
     // check for a reply
     QNetworkReply *reply = static_cast<QNetworkReply *>(sender());
     QNetworkReply::NetworkError errorCode = reply->error();
@@ -658,6 +651,18 @@ void LoadTokensPage::actDownloadFinishedTokensFile()
         reply->deleteLater();
         return;
     }
+
+    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (statusCode == 301 || statusCode == 302) {
+        QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+        qDebug() << "following redirect url:" << redirectUrl.toString();
+        downloadTokensFile(redirectUrl);
+        reply->deleteLater();
+        return;
+    }
+
+    progressLabel->hide();
+    progressBar->hide();
 
     // save tokens.xml url, but only if the user customized it and download was successfull
     if(urlLineEdit->text() != QString(TOKENS_URL))
@@ -700,35 +705,19 @@ void SaveTokensPage::retranslateUi()
 bool SaveTokensPage::validatePage()
 {
     bool ok = false;
-    const QString dataDir = 
-#if QT_VERSION < 0x050000
-        QDesktopServices::storageLocation(QDesktopServices::DataLocation);
-#else
-        QStandardPaths::standardLocations(QStandardPaths::DataLocation).first();
-#endif
-    QSettings* settings = new QSettings(this);
-    QString defaultPath = settings->value("paths/tokendatabase").toString();
+    QString defaultPath = settingsCache->getTokenDatabasePath();
     QString windowName = tr("Save token database");
     QString fileType = tr("XML; token database (*.xml)");
 
     do {
         QString fileName;
-        if (defaultPath.isEmpty()) {
-            if (defaultPathCheckBox->isChecked())
-                fileName = dataDir + "/tokens.xml";
-            else
-                fileName = QFileDialog::getSaveFileName(this, windowName, dataDir + "/tokens.xml", fileType);
-            settings->setValue("paths/tokendatabase", fileName);
-        }
-        else {
-            if (defaultPathCheckBox->isChecked())
-                fileName = defaultPath;
-            else
-                fileName = QFileDialog::getSaveFileName(this, windowName, defaultPath, fileType);
-        }
-        if (fileName.isEmpty()) {
+        if (defaultPathCheckBox->isChecked())
+            fileName = defaultPath;
+        else
+            fileName = QFileDialog::getSaveFileName(this, windowName, defaultPath, fileType);
+
+        if (fileName.isEmpty())
             return false;
-        }
 
         QFileInfo fi(fileName);
         QDir fileDir(fi.path());

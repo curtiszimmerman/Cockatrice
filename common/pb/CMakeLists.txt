@@ -2,8 +2,6 @@
 #
 # provides the protobuf interfaces
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
-
 SET(PROTO_FILES
     admin_commands.proto
     card_attributes.proto
@@ -106,6 +104,7 @@ SET(PROTO_FILES
     event_user_joined.proto
     event_user_left.proto
     event_user_message.proto
+    event_notify_user.proto
     game_commands.proto
     game_event_container.proto
     game_event_context.proto
@@ -115,6 +114,7 @@ SET(PROTO_FILES
     moderator_commands.proto
     move_card_to_zone.proto
     response_activate.proto
+    response_ban_history.proto
     response_deck_download.proto
     response_deck_list.proto
     response_deck_upload.proto
@@ -127,12 +127,18 @@ SET(PROTO_FILES
     response_register.proto
     response_replay_download.proto
     response_replay_list.proto
+    response_adjust_mod.proto
+    response_warn_history.proto
+    response_warn_list.proto
+    response_viewlog_history.proto
     response.proto
     room_commands.proto
     room_event.proto
     serverinfo_arrow.proto
+    serverinfo_ban.proto
     serverinfo_cardcounter.proto
     serverinfo_card.proto
+    serverinfo_chat_message.proto
     serverinfo_counter.proto
     serverinfo_deckstorage.proto
     serverinfo_game.proto
@@ -144,6 +150,7 @@ SET(PROTO_FILES
     serverinfo_replay_match.proto
     serverinfo_room.proto
     serverinfo_user.proto
+    serverinfo_warning.proto
     serverinfo_zone.proto
     server_message.proto
     session_commands.proto

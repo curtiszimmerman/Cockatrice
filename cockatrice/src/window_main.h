@@ -20,12 +20,16 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include <QList>
 #include <QMainWindow>
 #include <QSystemTrayIcon>
 #include <QProcess>
 #include <QMessageBox>
+#include <QtNetwork>
+
 #include "abstractclient.h"
 #include "pb/response.pb.h"
+#include "update_checker.h"
 
 class TabSupervisor;
 class RemoteClient;
@@ -42,7 +46,7 @@ private slots:
     void processConnectionClosedEvent(const Event_ConnectionClosed &event);
     void processServerShutdownEvent(const Event_ServerShutdown &event);
     void serverTimeout();
-    void loginError(Response::ResponseCode r, QString reasonStr, quint32 endTime);
+    void loginError(Response::ResponseCode r, QString reasonStr, quint32 endTime, QList<QString> missingFeatures);
     void registerError(Response::ResponseCode r, QString reasonStr, quint32 endTime);
     void activateError();
     void socketError(const QString &errorStr);
@@ -53,7 +57,7 @@ private slots:
     void activateAccepted();
     void localGameEnded();
     void pixmapCacheSizeChanged(int newSizeInMBs);
-
+    void notifyUserAboutUpdate();
     void actConnect();
     void actDisconnect();
     void actSinglePlayer();
@@ -65,16 +69,30 @@ private slots:
     void actExit();
     
     void actAbout();
+    void actUpdate();
+    void actViewLog();
 
     void iconActivated(QSystemTrayIcon::ActivationReason reason);
 
-    void maximize();
+    void showWindowIfHidden();
 
     void actCheckCardUpdates();
     void cardUpdateError(QProcess::ProcessError err);
     void cardUpdateFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void refreshShortcuts();
+    void cardDatabaseLoadingFailed();
+    void cardDatabaseNewSetsFound(int numUnknownSets, QStringList unknownSetsNames);
+    void cardDatabaseAllNewSetsEnabled();
+
+    void actOpenCustomFolder();
+    void actOpenCustomsetsFolder();
+    void actAddCustomSet();
+
+    void actEditSets();
+    void actEditTokens();
 private:
     static const QString appName;
+    static const QStringList fileNameFilters;
     void setClientStatusTitle();
     void retranslateUi();
     void createActions();
@@ -82,13 +100,15 @@ private:
 
     void createTrayIcon();
     void createTrayActions();
+    int getNextCustomSetPrefix(QDir dataDir);
     // TODO: add a preference item to choose updater name for other games
     inline QString getCardUpdaterBinaryName() { return "oracle"; };
 
     QList<QMenu *> tabMenus;
-    QMenu *cockatriceMenu, *helpMenu;
+    QMenu *cockatriceMenu, *dbMenu, *helpMenu;
     QAction *aConnect, *aDisconnect, *aSinglePlayer, *aWatchReplay, *aDeckEditor, *aFullScreen, *aSettings, *aExit,
-        *aAbout, *aCheckCardUpdates, *aRegister;
+        *aAbout, *aCheckCardUpdates, *aRegister, *aUpdate, *aViewLog;
+    QAction *aEditSets, *aEditTokens, *aOpenCustomFolder, *aOpenCustomsetsFolder, *aAddCustomSet;
     TabSupervisor *tabSupervisor;
 
     QMenu *trayIconMenu;
@@ -103,6 +123,7 @@ private:
 
     QMessageBox serverShutdownMessageBox;
     QProcess * cardUpdateProcess;
+
 public:
     MainWindow(QWidget *parent = 0);
     ~MainWindow();

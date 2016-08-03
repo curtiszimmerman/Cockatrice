@@ -12,7 +12,7 @@ class QPushButton;
 class QRadioButton;
 class DeckList;
 class CardDatabaseModel;
-class CardDatabaseDisplayModel;
+class TokenDisplayModel;
 
 class DlgCreateToken : public QDialog {
     Q_OBJECT
@@ -25,18 +25,21 @@ public:
     bool getDestroy() const;
 private slots:
     void tokenSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+    void updateSearch(const QString &search);
     void actChooseTokenFromAll(bool checked);
     void actChooseTokenFromDeck(bool checked);
     void actOk();
 private:
     CardDatabaseModel *cardDatabaseModel;
-    CardDatabaseDisplayModel *cardDatabaseDisplayModel;
+    TokenDisplayModel *cardDatabaseDisplayModel;
     QStringList predefinedTokens;
     QLabel *nameLabel, *colorLabel, *ptLabel, *annotationLabel;
     QComboBox *colorEdit;
     QLineEdit *nameEdit, *ptEdit, *annotationEdit;
     QCheckBox *destroyCheckBox;
     QRadioButton *chooseTokenFromAllRadioButton, *chooseTokenFromDeckRadioButton;
+
+    void updateSearchFieldWithoutUpdatingFilter(const QString &newValue) const;
 };
 
 #endif

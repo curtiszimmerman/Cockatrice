@@ -35,7 +35,7 @@ RemoteReplayList_TreeModel::RemoteReplayList_TreeModel(AbstractClient *_client, 
     QFileIconProvider fip;
     dirIcon = fip.icon(QFileIconProvider::Folder);
     fileIcon = fip.icon(QFileIconProvider::File);
-    lockIcon = QIcon(":/resources/lock.svg");
+    lockIcon = QPixmap("theme:icons/lock");
 
     refreshTree();
 }
@@ -278,11 +278,7 @@ RemoteReplayList_TreeWidget::RemoteReplayList_TreeWidget(AbstractClient *_client
     proxyModel->setSortCaseSensitivity(Qt::CaseInsensitive);
     setModel(proxyModel);
 
-#if QT_VERSION < 0x050000
-    header()->setResizeMode(QHeaderView::ResizeToContents);
-#else
     header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-#endif
     header()->setStretchLastSection(false);
     setUniformRowHeights(true);
     setSortingEnabled(true);

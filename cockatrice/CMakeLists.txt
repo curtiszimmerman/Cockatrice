@@ -6,8 +6,8 @@ PROJECT(cockatrice)
 
 SET(cockatrice_SOURCES
     src/abstractcounter.cpp 
-    src/counter_general.cpp 
-    src/dlg_creategame.cpp 
+    src/counter_general.cpp
+    src/dlg_creategame.cpp
     src/dlg_filter_games.cpp
     src/dlg_connect.cpp 
     src/dlg_create_token.cpp 
@@ -16,7 +16,9 @@ SET(cockatrice_SOURCES
     src/dlg_edit_tokens.cpp
     src/dlg_edit_user.cpp
     src/dlg_register.cpp 
-    src/abstractclient.cpp 
+    src/dlg_update.cpp
+    src/dlg_viewlog.cpp
+    src/abstractclient.cpp
     src/remoteclient.cpp 
     src/main.cpp 
     src/window_main.cpp 
@@ -75,6 +77,7 @@ SET(cockatrice_SOURCES
     src/tab_admin.cpp 
     src/tab_userlists.cpp 
     src/tab_deck_editor.cpp
+    src/tab_logs.cpp
     src/replay_timeline_widget.cpp
     src/deckstats_interface.cpp
     src/chatview.cpp 
@@ -87,6 +90,7 @@ SET(cockatrice_SOURCES
     src/playerlistwidget.cpp 
     src/pixmapgenerator.cpp 
     src/settingscache.cpp 
+    src/thememanager.cpp 
     src/localserver.cpp 
     src/localserverinterface.cpp 
     src/localclient.cpp 
@@ -94,18 +98,31 @@ SET(cockatrice_SOURCES
     src/qt-json/json.cpp
     src/soundengine.cpp
     src/pending_command.cpp
+    src/pictureloader.cpp
+    src/shortcutssettings.cpp
+    src/sequenceEdit/sequenceedit.cpp
+    src/sequenceEdit/shortcutstab.cpp
+    src/lineeditcompleter.cpp
+    src/settings/settingsmanager.cpp
+    src/settings/carddatabasesettings.cpp
+    src/settings/serverssettings.cpp
+    src/settings/messagesettings.cpp
+    src/settings/gamefilterssettings.cpp
+    src/settings/layoutssettings.cpp
+    src/update_checker.cpp
+    src/update_downloader.cpp
+    src/logger.cpp
     ${VERSION_STRING_CPP}
 )
 
-if (UNIX AND NOT APPLE)
-    set_source_files_properties(src/main.cpp PROPERTIES COMPILE_FLAGS -DTRANSLATION_PATH=\\"${CMAKE_INSTALL_PREFIX}/share/cockatrice/translations\\")
-endif (UNIX AND NOT APPLE)
+add_subdirectory(sounds)
+add_subdirectory(themes)
 
 set(cockatrice_RESOURCES cockatrice.qrc)
 
 IF(UPDATE_TRANSLATIONS)
     FILE(GLOB_RECURSE translate_cockatrice_SRCS ${CMAKE_SOURCE_DIR}/cockatrice/src/*.cpp ${CMAKE_SOURCE_DIR}/cockatrice/src/*.h)
-    FILE(GLOB_RECURSE translate_common_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/common/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/common/*.h)
+    FILE(GLOB_RECURSE translate_common_SRCS ${CMAKE_SOURCE_DIR}/common/*.cpp ${CMAKE_SOURCE_DIR}/common/*.h)
     SET(translate_SRCS ${translate_cockatrice_SRCS} ${translate_common_SRCS})
     SET(cockatrice_TS "${CMAKE_CURRENT_SOURCE_DIR}/translations/cockatrice_en.ts")
 ELSE()
@@ -124,40 +141,17 @@ ENDIF(APPLE)
 
 set(COCKATRICE_LIBS)
 
-# Qt4 stuff
-if(Qt4_FOUND)
-    if (NOT QT_QTMULTIMEDIA_FOUND)
-        FIND_PACKAGE(QtMobility REQUIRED)
-    endif()
-
-    SET(QT_USE_QTNETWORK TRUE)
-    SET(QT_USE_QTMULTIMEDIA TRUE)
-    SET(QT_USE_QTSVG TRUE)
-
-    # Include directories
-    INCLUDE(${QT_USE_FILE})
-    INCLUDE_DIRECTORIES(${QT_INCLUDES})
-    INCLUDE_DIRECTORIES(${QT_MOBILITY_INCLUDE_DIR})
-    INCLUDE_DIRECTORIES(${QT_MOBILITY_MULTIMEDIAKIT_INCLUDE_DIR})
-    LIST(APPEND COCKATRICE_LIBS ${QT_LIBRARIES})
-    LIST(APPEND COCKATRICE_LIBS ${QT_QTMAIN_LIBRARY})
-    LIST(APPEND COCKATRICE_LIBS ${QT_MOBILITY_MULTIMEDIAKIT_LIBRARY})
-
-    # Let cmake chew Qt4's translations and resource files
-    # Note: header files are MOC-ed automatically by cmake
-    IF(UPDATE_TRANSLATIONS)
-        QT4_CREATE_TRANSLATION(cockatrice_QM ${translate_SRCS} ${cockatrice_TS})
-    ELSE(UPDATE_TRANSLATIONS)
-        QT4_ADD_TRANSLATION(cockatrice_QM ${cockatrice_TS})
-    ENDIF(UPDATE_TRANSLATIONS)
-
-    QT4_ADD_RESOURCES(cockatrice_RESOURCES_RCC ${cockatrice_RESOURCES})
-endif()
-
 # qt5 stuff
 if(Qt5Widgets_FOUND)
     include_directories(${Qt5Widgets_INCLUDE_DIRS})
     list(APPEND COCKATRICE_LIBS Widgets)
+
+    # QtConcurrent
+    find_package(Qt5Concurrent)
+    if(Qt5Concurrent_FOUND)
+        include_directories(${Qt5Concurrent_INCLUDE_DIRS})
+        list(APPEND ORACLE_LIBS Concurrent)
+    endif()
 
     # QtNetwork
     find_package(Qt5Network)
@@ -222,23 +216,13 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 # Build cockatrice binary and link it
 ADD_EXECUTABLE(cockatrice WIN32 MACOSX_BUNDLE ${cockatrice_SOURCES} ${cockatrice_QM} ${cockatrice_RESOURCES_RCC} ${cockatrice_MOC_SRCS})
-set_property(TARGET cockatrice PROPERTY CXX_STANDARD 11)
-set_property(TARGET cockatrice PROPERTY CXX_STANDARD_REQUIRED ON)
 
-if(Qt4_FOUND)
-    if(MSVC) 
-        set(QT_USE_QTMAIN true) 
-    endif() 
-    TARGET_LINK_LIBRARIES(cockatrice cockatrice_common ${COCKATRICE_LIBS})
+if(MSVC)
+    TARGET_LINK_LIBRARIES(cockatrice cockatrice_common Qt5::WinMain)
+else()
+    TARGET_LINK_LIBRARIES(cockatrice cockatrice_common)
 endif()
-if(Qt5Widgets_FOUND)
-    if(MSVC)
-        TARGET_LINK_LIBRARIES(cockatrice cockatrice_common Qt5::WinMain)
-    else()
-        TARGET_LINK_LIBRARIES(cockatrice cockatrice_common)
-    endif()
-    qt5_use_modules(cockatrice ${COCKATRICE_LIBS})
-endif()
+qt5_use_modules(cockatrice ${COCKATRICE_LIBS})
 
 if(UNIX)
     if(APPLE)
@@ -269,12 +253,11 @@ if(APPLE)
     # these needs to be relative to CMAKE_INSTALL_PREFIX
     set(plugin_dest_dir cockatrice.app/Contents/Plugins)
     set(qtconf_dest_dir cockatrice.app/Contents/Resources)
+    get_filename_component(QT_LIBRARY_DIR "${QT_LIBRARY_DIR}/.." ABSOLUTE)
 
-    # qt4: codecs, iconengines, imageformats, phonon_backend
-    # qt5: audio, iconengines, imageformats, platforms, printsupport
-
+    # qt5 plugins: audio, iconengines, imageformats, platforms, printsupport
     install(DIRECTORY "${QT_PLUGINS_DIR}/" DESTINATION ${plugin_dest_dir} COMPONENT Runtime
-        FILES_MATCHING REGEX "(audio|codecs|iconengines|imageformats|phonon_backend|platforms|printsupport)/.*\\.dylib"
+        FILES_MATCHING REGEX "(audio|iconengines|imageformats|platforms|printsupport)/.*\\.dylib"
         REGEX ".*_debug\\.dylib" EXCLUDE)
 
     install(CODE "
@@ -298,11 +281,9 @@ if(WIN32)
     set(plugin_dest_dir Plugins)
     set(qtconf_dest_dir .)
 
-    # qt4: codecs, iconengines, imageformats, phonon_backend
-    # qt5: audio, iconengines, imageformats, platforms, printsupport
-
+    # qt5 plugins: audio, iconengines, imageformats, platforms, printsupport
     install(DIRECTORY "${QT_PLUGINS_DIR}/" DESTINATION ${plugin_dest_dir} COMPONENT Runtime
-        FILES_MATCHING REGEX "(audio|codecs|iconengines|imageformats|phonon_backend|platforms|printsupport)/.*[^d]\\.dll")
+        FILES_MATCHING REGEX "(audio|iconengines|imageformats|platforms|printsupport)/.*[^d]\\.dll")
 
     install(CODE "
         file(WRITE \"\${CMAKE_INSTALL_PREFIX}/${qtconf_dest_dir}/qt.conf\" \"[Paths]
@@ -322,4 +303,9 @@ Data = Resources\")
     if(WIN32SSLRUNTIME_FOUND)
         install(FILES ${WIN32SSLRUNTIME_LIBRARIES} DESTINATION ./)
     endif()
+endif()
+#Compile a portable version, default off
+option(PORTABLE "portable build" OFF)
+IF(PORTABLE)
+add_definitions(-DPORTABLE_BUILD)
 endif()

@@ -1,5 +1,6 @@
 #include "abstractcounter.h"
 #include "player.h"
+#include "settingscache.h"
 #include <QPainter>
 #include <QMenu>
 #include <QAction>
@@ -11,11 +12,9 @@
 AbstractCounter::AbstractCounter(Player *_player, int _id, const QString &_name, bool _shownInCounterArea, int _value, QGraphicsItem *parent)
     : QGraphicsItem(parent), player(_player), id(_id), name(_name), value(_value), hovered(false), aDec(0), aInc(0), dialogSemaphore(false), deleteAfterDialog(false), shownInCounterArea(_shownInCounterArea)
 {
-#if QT_VERSION < 0x050000
-    setAcceptsHoverEvents(true);
-#else
     setAcceptHoverEvents(true);
-#endif
+
+    shortcutActive = false;
 
     if (player->getLocal()) {
         menu = new QMenu(name);
@@ -39,6 +38,8 @@ AbstractCounter::AbstractCounter(Player *_player, int _id, const QString &_name,
     } else
         menu = 0;
     
+    connect(&settingsCache->shortcuts(), SIGNAL(shortCutchanged()),this,SLOT(refreshShortcuts()));
+    refreshShortcuts();
     retranslateUi();
 }
 
@@ -65,19 +66,27 @@ void AbstractCounter::retranslateUi()
 void AbstractCounter::setShortcutsActive()
 {
     if (name == "life") {
-        aSet->setShortcut(QKeySequence("Ctrl+L"));
-        aDec->setShortcut(QKeySequence("F11"));
-        aInc->setShortcut(QKeySequence("F12"));
+        shortcutActive = true;
+        aSet->setShortcuts(settingsCache->shortcuts().getShortcut("Player/aSet"));
+        aDec->setShortcuts(settingsCache->shortcuts().getShortcut("Player/aDec"));
+        aInc->setShortcuts(settingsCache->shortcuts().getShortcut("Player/aInc"));
     }
 }
 
 void AbstractCounter::setShortcutsInactive()
 {
+    shortcutActive = false;
     if (name == "life") {
         aSet->setShortcut(QKeySequence());
         aDec->setShortcut(QKeySequence());
         aInc->setShortcut(QKeySequence());
     }
+}
+
+void AbstractCounter::refreshShortcuts()
+{
+    if(shortcutActive)
+        setShortcutsActive();
 }
 
 void AbstractCounter::setValue(int _value)
@@ -136,12 +145,7 @@ void AbstractCounter::setCounter()
     bool ok;
     dialogSemaphore = true;
     int newValue = 
-#if QT_VERSION < 0x050000
-    QInputDialog::getInteger(
-#else
-    QInputDialog::getInt(
-#endif
-        0, tr("Set counter"), tr("New value for counter '%1':").arg(name), value, -2000000000, 2000000000, 1, &ok);
+    QInputDialog::getInt(0, tr("Set counter"), tr("New value for counter '%1':").arg(name), value, -2000000000, 2000000000, 1, &ok);
     if (deleteAfterDialog) {
         deleteLater();
         return;

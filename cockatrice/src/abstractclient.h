@@ -21,9 +21,11 @@ class Event_ServerMessage;
 class Event_ListRooms;
 class Event_GameJoined;
 class Event_UserMessage;
+class Event_NotifyUser;
 class Event_ConnectionClosed;
 class Event_ServerShutdown;
 class Event_ReplayAdded;
+class FeatureSet;
 
 enum ClientStatus {
     StatusDisconnected,
@@ -56,6 +58,7 @@ signals:
     void listRoomsEventReceived(const Event_ListRooms &event);
     void gameJoinedEventReceived(const Event_GameJoined &event);
     void userMessageEventReceived(const Event_UserMessage &event);
+    void notifyUserEventReceived(const Event_NotifyUser &event);
     void userInfoChanged(const ServerInfo_User &userInfo);
     void buddyListReceived(const QList<ServerInfo_User> &buddyList);
     void ignoreListReceived(const QList<ServerInfo_User> &ignoreList);
@@ -94,6 +97,8 @@ public:
     static PendingCommand *prepareRoomCommand(const ::google::protobuf::Message &cmd, int roomId);
     static PendingCommand *prepareModeratorCommand(const ::google::protobuf::Message &cmd);
     static PendingCommand *prepareAdminCommand(const ::google::protobuf::Message &cmd);
+
+    QMap<QString, bool> clientFeatures;
 };
 
 #endif

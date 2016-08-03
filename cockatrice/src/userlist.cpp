@@ -18,7 +18,6 @@
 #include <QHBoxLayout>
 #include <QCheckBox>
 #include <QMessageBox>
-
 #include "pending_command.h"
 #include "pb/session_commands.pb.h"
 #include "pb/moderator_commands.pb.h"
@@ -36,11 +35,19 @@ BanDialog::BanDialog(const ServerInfo_User &info, QWidget *parent)
     ipBanCheckBox = new QCheckBox(tr("ban &IP address"));
     ipBanCheckBox->setChecked(true);
     ipBanEdit = new QLineEdit(QString::fromStdString(info.address()));
+    idBanCheckBox = new QCheckBox(tr("ban client I&D"));
+    idBanCheckBox->setChecked(true);
+    idBanEdit = new QLineEdit(QString::fromStdString(info.clientid()));
+    if (QString::fromStdString(info.clientid()).isEmpty())
+        idBanCheckBox->setChecked(false);
+
     QGridLayout *banTypeGrid = new QGridLayout;
     banTypeGrid->addWidget(nameBanCheckBox, 0, 0);
     banTypeGrid->addWidget(nameBanEdit, 0, 1);
     banTypeGrid->addWidget(ipBanCheckBox, 1, 0);
     banTypeGrid->addWidget(ipBanEdit, 1, 1);
+    banTypeGrid->addWidget(idBanCheckBox, 2, 0);
+    banTypeGrid->addWidget(idBanEdit, 2, 1);
     QGroupBox *banTypeGroupBox = new QGroupBox(tr("Ban type"));
     banTypeGroupBox->setLayout(banTypeGrid);
     
@@ -108,12 +115,96 @@ BanDialog::BanDialog(const ServerInfo_User &info, QWidget *parent)
     setWindowTitle(tr("Ban user from server"));
 }
 
-void BanDialog::okClicked()
+WarningDialog::WarningDialog(const QString userName, const QString clientID, QWidget *parent)
+        : QDialog(parent)
 {
-    if (!nameBanCheckBox->isChecked() && !ipBanCheckBox->isChecked()) {
-        QMessageBox::critical(this, tr("Error"), tr("You have to select a name-based or IP-based ban, or both."));
+    setAttribute(Qt::WA_DeleteOnClose);
+    descriptionLabel = new QLabel(tr("Which warning would you like to send?"));
+    nameWarning = new QLineEdit(userName);
+    warnClientID = new QLineEdit(clientID);
+    warningOption = new QComboBox();
+    warningOption->addItem("");
+
+    QPushButton *okButton = new QPushButton(tr("&OK"));
+    okButton->setAutoDefault(true);
+    connect(okButton, SIGNAL(clicked()), this, SLOT(okClicked()));
+    QPushButton *cancelButton = new QPushButton(tr("&Cancel"));
+    connect(cancelButton, SIGNAL(clicked()), this, SLOT(reject()));
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(okButton);
+    buttonLayout->addWidget(cancelButton);
+
+    QVBoxLayout *vbox = new QVBoxLayout;
+    vbox->addWidget(descriptionLabel);
+    vbox->addWidget(nameWarning);
+    vbox->addWidget(warningOption);
+    vbox->addLayout(buttonLayout);
+    setLayout(vbox);
+    setWindowTitle(tr("Warn user for misconduct"));
+}
+
+void WarningDialog::okClicked()
+{
+    if (nameWarning->text().simplified().isEmpty()) {
+        QMessageBox::critical(this, tr("Error"), tr("User name to send a warning to can not be blank, please specify a user to warn."));
         return;
     }
+
+    if (warningOption->currentText().simplified().isEmpty()) {
+        QMessageBox::critical(this, tr("Error"), tr("Warning to use can not be blank, please select a valid warning to send."));
+        return;
+    }
+
+    accept();
+}
+
+QString WarningDialog::getName() const
+{
+    return nameWarning->text().simplified();
+}
+
+QString WarningDialog::getWarnID() const
+{
+    return warnClientID->text().simplified();
+}
+
+QString WarningDialog::getReason() const
+{
+    return warningOption->currentText().simplified();
+}
+
+void WarningDialog::addWarningOption(const QString warning)
+{
+    warningOption->addItem(warning);
+}
+
+void BanDialog::okClicked()
+{
+    if (!nameBanCheckBox->isChecked() && !ipBanCheckBox->isChecked() && !idBanCheckBox->isChecked()) {
+        QMessageBox::critical(this, tr("Error"), tr("You have to select a name-based, IP-based, clientId based, or some combination of the three to place a ban."));
+        return;
+    }
+
+    if (nameBanCheckBox->isChecked())
+        if (nameBanEdit->text().simplified() == ""){
+            QMessageBox::critical(this, tr("Error"), tr("You must have a value in the name ban when selecting the name ban checkbox."));
+            return;
+        }
+
+    if (ipBanCheckBox->isChecked())
+        if (ipBanEdit->text().simplified() == ""){
+            QMessageBox::critical(this, tr("Error"), tr("You must have a value in the ip ban when selecting the ip ban checkbox."));
+            return;
+        }
+
+    if (idBanCheckBox->isChecked())
+        if (idBanEdit->text().simplified() == ""){
+            QMessageBox::critical(this, tr("Error"), tr("You must have a value in the clientid ban when selecting the clientid ban checkbox."));
+            return;
+        }
+
     accept();
 }
 
@@ -125,6 +216,11 @@ void BanDialog::enableTemporaryEdits(bool enabled)
     hoursEdit->setEnabled(enabled);
     minutesLabel->setEnabled(enabled);
     minutesEdit->setEnabled(enabled);
+}
+
+QString BanDialog::getBanId() const
+{
+    return idBanCheckBox->isChecked() ? idBanEdit->text() : QString();
 }
 
 QString BanDialog::getBanName() const
@@ -215,11 +311,7 @@ UserList::UserList(TabSupervisor *_tabSupervisor, AbstractClient *_client, UserL
     
     userTree = new QTreeWidget;
     userTree->setColumnCount(3);
-#if QT_VERSION < 0x050000
-    userTree->header()->setResizeMode(QHeaderView::ResizeToContents);
-#else
     userTree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-#endif
     userTree->setHeaderHidden(true);
     userTree->setRootIsDecorated(false);
     userTree->setIconSize(QSize(20, 12));

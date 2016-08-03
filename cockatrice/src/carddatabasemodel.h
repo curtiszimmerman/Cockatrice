@@ -12,7 +12,7 @@ class FilterTree;
 class CardDatabaseModel : public QAbstractListModel {
     Q_OBJECT
 public:
-    enum Columns { NameColumn, SetListColumn, ManaCostColumn, CardTypeColumn, PTColumn, CMCColumn };
+    enum Columns { NameColumn, SetListColumn, ManaCostColumn, PTColumn, CardTypeColumn, ColorColumn };
     enum Role { SortRole=Qt::UserRole };
     CardDatabaseModel(CardDatabase *_db, QObject *parent = 0);
     ~CardDatabaseModel();
@@ -25,11 +25,13 @@ public:
 private:
     QList<CardInfo *> cardList;
     CardDatabase *db;
+
+    inline bool checkCardHasAtLeastOneEnabledSet(CardInfo *card);
 private slots:
-    void updateCardList();
     void cardAdded(CardInfo *card);
     void cardRemoved(CardInfo *card);
     void cardInfoChanged(CardInfo *card);
+    void cardDatabaseEnabledSetsChanged();
 };
 
 class CardDatabaseDisplayModel : public QSortFilterProxyModel {
@@ -42,6 +44,7 @@ private:
     QString searchTerm;
     QSet<QString> cardNameSet, cardTypes, cardColors;
     FilterTree *filterTree;
+    int loadedRowCount;
 public:
     CardDatabaseDisplayModel(QObject *parent = 0);
     void setFilterTree(FilterTree *filterTree);
@@ -54,11 +57,24 @@ public:
     void setCardTypes(const QSet<QString> &_cardTypes) { cardTypes = _cardTypes; invalidate(); }
     void setCardColors(const QSet<QString> &_cardColors) { cardColors = _cardColors; invalidate(); }
     void clearFilterAll();
+    int rowCount(const QModelIndex &parent = QModelIndex()) const;
 protected:
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const;
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const;
+    bool rowMatchesCardName(CardInfo const *info) const;
+    bool canFetchMore(const QModelIndex &parent) const;
+    void fetchMore(const QModelIndex &parent);
 private slots:
     void filterTreeChanged();
+};
+
+class TokenDisplayModel : public CardDatabaseDisplayModel {
+    Q_OBJECT
+public:
+    TokenDisplayModel(QObject *parent = 0);
+    int rowCount(const QModelIndex &parent = QModelIndex()) const;
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const;
 };
 
 #endif

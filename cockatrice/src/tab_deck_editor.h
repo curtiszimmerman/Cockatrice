@@ -3,6 +3,7 @@
 
 #include "tab.h"
 #include <QAbstractItemModel>
+#include <QDir>
 #include <QLineEdit>
 #include "keysignals.h"
 
@@ -20,6 +21,9 @@ class FilterTreeModel;
 class FilterBuilder;
 class CardInfo;
 class QGroupBox;
+class QHBoxLayout;
+class QPushButton;
+class QDockWidget;
 
 class SearchLineEdit : public QLineEdit {
 private:
@@ -49,10 +53,6 @@ class TabDeckEditor : public Tab {
             void actSaveDeckToClipboard();
             void actPrintDeck();
             void actAnalyzeDeck();
-            void actOpenCustomFolder();
-
-            void actEditSets();
-            void actEditTokens();
 
             void actClearFilterAll();
             void actClearFilterOne();
@@ -73,6 +73,17 @@ class TabDeckEditor : public Tab {
             void filterViewCustomContextMenu(const QPoint &point);
             void filterRemove(QAction *action);
             void setPriceTagFeatureEnabled(int enabled);
+
+            void loadLayout();
+            void restartLayout();
+            void freeDocksSize();
+            void refreshShortcuts();
+
+            bool eventFilter(QObject *o, QEvent *e);
+            void dockVisibleTriggered();
+            void dockFloatingTriggered();
+            void dockTopLevelChanged(bool topLevel);
+            void saveDbHeaderState();
 private:
     CardInfo *currentCardInfo() const;
     void addCardHelper(QString zoneName);
@@ -99,14 +110,22 @@ private:
     QLabel *hashLabel;
     FilterTreeModel *filterModel;
     QTreeView *filterView;
-    QGroupBox *filterBox;
+    QWidget *filterBox;
 
-    QMenu *deckMenu, *dbMenu;
-    QAction *aNewDeck, *aLoadDeck, *aSaveDeck, *aSaveDeckAs, *aLoadDeckFromClipboard, *aSaveDeckToClipboard, *aPrintDeck, *aAnalyzeDeck, *aClose, *aOpenCustomFolder;
-    QAction *aEditSets, *aEditTokens, *aClearFilterAll, *aClearFilterOne;
+    QMenu *deckMenu, *viewMenu, *cardInfoDockMenu, *deckDockMenu, *filterDockMenu;
+    QAction *aNewDeck, *aLoadDeck, *aSaveDeck, *aSaveDeckAs, *aLoadDeckFromClipboard, *aSaveDeckToClipboard, *aPrintDeck, *aAnalyzeDeck, *aClose;
+    QAction *aClearFilterAll, *aClearFilterOne;
     QAction *aAddCard, *aAddCardToSideboard, *aRemoveCard, *aIncrement, *aDecrement;// *aUpdatePrices;
+    QAction *aResetLayout;
+    QAction *aCardInfoDockVisible, *aCardInfoDockFloating, *aDeckDockVisible, *aDeckDockFloating, *aFilterDockVisible, *aFilterDockFloating;
 
     bool modified;
+    QVBoxLayout *centralFrame;
+    QHBoxLayout *searchLayout;
+    QDockWidget *cardInfoDock;
+    QDockWidget *deckDock;
+    QDockWidget *filterDock;
+    QWidget *centralWidget;
 public:
     TabDeckEditor(TabSupervisor *_tabSupervisor, QWidget *parent = 0);
     ~TabDeckEditor();
@@ -115,9 +134,14 @@ public:
     void setDeck(DeckLoader *_deckLoader);
     void setModified(bool _windowModified);
     bool confirmClose();
+    void createDeckDock();
+    void createCardInfoDock();
+    void createFiltersDock();
+    void createMenus();
+    void createCentralFrame();
+
 public slots:
     void closeRequest();
-    void checkFirstRunDetected();
 signals:
     void deckEditorClosing(TabDeckEditor *tab);
 };

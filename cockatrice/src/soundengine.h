@@ -3,33 +3,34 @@
 
 #include <QObject>
 #include <QMap>
-#include <QDateTime>
+#include <QDir>
+#include <QString>
 
 class QAudioOutput;
 class QBuffer;
 
+typedef QMap<QString, QString> QStringMap;
+
 class SoundEngine : public QObject {
     Q_OBJECT
-private:
-    void playSound(const QString &fileName);
-    QMap<QString, QByteArray> audioData;
-    QBuffer *inputBuffer;
-    QAudioOutput *audio;
-    QDateTime lastTapPlayed;
-    QDateTime lastEndStepPlayed;
-    QDateTime lastAttackStepPlayed;
-private slots:
-    void cacheData();
-    void soundEnabledChanged();
 public:
     SoundEngine(QObject *parent = 0);
+    ~SoundEngine();
+    void playSound(QString fileName);
+    QStringMap &getAvailableThemes();
+private:
+    QMap<QString, QByteArray> audioData;
+    QBuffer *inputBuffer;
+    QAudioOutput * player;
+    QStringMap availableThemes;
+protected:
+    void ensureThemeDirectoryExists();
+private slots:
+    void soundEnabledChanged();
+    void themeChangedSlot();
 public slots:
-    void endStep();
-    void tap();
-    void playerJoined();
-    void attack();
+    void testSound();
 };
 
 extern SoundEngine *soundEngine;
-
 #endif

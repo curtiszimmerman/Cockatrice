@@ -36,11 +36,7 @@ TabReplays::TabReplays(TabSupervisor *_tabSupervisor, AbstractClient *_client)
     localDirView->setColumnHidden(1, true);
     localDirView->setRootIndex(localDirModel->index(localDirModel->rootPath(), 0));
     localDirView->setSortingEnabled(true);
-#if QT_VERSION < 0x050000
-    localDirView->header()->setResizeMode(QHeaderView::ResizeToContents);
-#else
     localDirView->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-#endif
     localDirView->header()->setSortIndicator(0, Qt::AscendingOrder);
     
     leftToolBar = new QToolBar;
@@ -78,24 +74,24 @@ TabReplays::TabReplays(TabSupervisor *_tabSupervisor, AbstractClient *_client)
     hbox->addWidget(rightGroupBox);
     
     aOpenLocalReplay = new QAction(this);
-    aOpenLocalReplay->setIcon(QIcon(":/resources/icon_view.svg"));
+    aOpenLocalReplay->setIcon(QPixmap("theme:icons/view"));
     connect(aOpenLocalReplay, SIGNAL(triggered()), this, SLOT(actOpenLocalReplay()));
     connect(localDirView, SIGNAL(doubleClicked(const QModelIndex &)), this, SLOT(actOpenLocalReplay()));
     aDeleteLocalReplay = new QAction(this);
-    aDeleteLocalReplay->setIcon(QIcon(":/resources/remove_row.svg"));
+    aDeleteLocalReplay->setIcon(QPixmap("theme:icons/remove_row"));
     connect(aDeleteLocalReplay, SIGNAL(triggered()), this, SLOT(actDeleteLocalReplay()));
     aOpenRemoteReplay = new QAction(this);
-    aOpenRemoteReplay->setIcon(QIcon(":/resources/icon_view.svg"));
+    aOpenRemoteReplay->setIcon(QPixmap("theme:icons/view"));
     connect(aOpenRemoteReplay, SIGNAL(triggered()), this, SLOT(actOpenRemoteReplay()));
     connect(serverDirView, SIGNAL(doubleClicked(const QModelIndex &)), this, SLOT(actOpenRemoteReplay()));
     aDownload = new QAction(this);
-    aDownload->setIcon(QIcon(":/resources/arrow_left_green.svg"));
+    aDownload->setIcon(QPixmap("theme:icons/arrow_left_green"));
     connect(aDownload, SIGNAL(triggered()), this, SLOT(actDownload()));
     aKeep = new QAction(this);
-    aKeep->setIcon(QIcon(":/resources/lock.svg"));
+    aKeep->setIcon(QPixmap("theme:icons/lock"));
     connect(aKeep, SIGNAL(triggered()), this, SLOT(actKeepRemoteReplay()));
     aDeleteRemoteReplay = new QAction(this);
-    aDeleteRemoteReplay->setIcon(QIcon(":/resources/remove_row.svg"));
+    aDeleteRemoteReplay->setIcon(QPixmap("theme:icons/remove_row"));
     connect(aDeleteRemoteReplay, SIGNAL(triggered()), this, SLOT(actDeleteRemoteReplay()));
     
     leftToolBar->addAction(aOpenLocalReplay);
@@ -106,7 +102,10 @@ TabReplays::TabReplays(TabSupervisor *_tabSupervisor, AbstractClient *_client)
     rightToolBar->addAction(aDeleteRemoteReplay);
     
     retranslateUi();
-    setLayout(hbox);
+
+    QWidget * mainWidget = new QWidget(this);
+    mainWidget->setLayout(hbox);
+    setCentralWidget(mainWidget);
     
     connect(client, SIGNAL(replayAddedEventReceived(const Event_ReplayAdded &)), this, SLOT(replayAddedEventReceived(const Event_ReplayAdded &)));
 }

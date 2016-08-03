@@ -3,13 +3,15 @@
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QAction>
+#include <QSystemTrayIcon>
+#include <QApplication>
+#include <QDebug>
 #include "tab_message.h"
 #include "abstractclient.h"
 #include "chatview.h"
 #include "main.h"
 #include "settingscache.h"
-#include <QSystemTrayIcon>
-#include <QApplication>
+#include "soundengine.h"
 
 #include "pending_command.h"
 #include "pb/session_commands.pb.h"
@@ -38,7 +40,10 @@ TabMessage::TabMessage(TabSupervisor *_tabSupervisor, AbstractClient *_client, c
     addTabMenu(messageMenu);
 
     retranslateUi();
-    setLayout(vbox);
+
+    QWidget * mainWidget = new QWidget(this);
+    mainWidget->setLayout(vbox);
+    setCentralWidget(mainWidget);
 }
 
 TabMessage::~TabMessage()
@@ -110,9 +115,13 @@ void TabMessage::actLeave()
 void TabMessage::processUserMessageEvent(const Event_UserMessage &event)
 {
     const UserLevelFlags userLevel(event.sender_name() == otherUserInfo->name() ? otherUserInfo->user_level() : ownUserInfo->user_level());
-    chatView->appendMessage(QString::fromStdString(event.message()), QString::fromStdString(event.sender_name()), userLevel, true);
+    chatView->appendMessage(QString::fromStdString(event.message()), 0,QString::fromStdString(event.sender_name()), userLevel, true);
+    if (tabSupervisor->currentIndex() != tabSupervisor->indexOf(this))
+        soundEngine->playSound("private_message");
     if (settingsCache->getShowMessagePopup() && shouldShowSystemPopup(event))
         showSystemPopup(event);
+    if (QString::fromStdString(event.sender_name()).toLower().simplified() == "servatrice")
+        sayEdit->setDisabled(true);
 
     emit userEvent();
 }
@@ -123,9 +132,15 @@ bool TabMessage::shouldShowSystemPopup(const Event_UserMessage &event) {
 }
 
 void TabMessage::showSystemPopup(const Event_UserMessage &event) {
-    disconnect(trayIcon, SIGNAL(messageClicked()), 0, 0);
-    trayIcon->showMessage(tr("Private message from ") + otherUserInfo->name().c_str(), event.message().c_str());
-    connect(trayIcon, SIGNAL(messageClicked()), this, SLOT(messageClicked()));
+    if (trayIcon) {
+        disconnect(trayIcon, SIGNAL(messageClicked()), 0, 0);
+        trayIcon->showMessage(tr("Private message from ") + otherUserInfo->name().c_str(), event.message().c_str());
+        connect(trayIcon, SIGNAL(messageClicked()), this, SLOT(messageClicked()));
+    }
+    else
+    {
+        qDebug() << "Error: trayIcon is NULL. TabMessage::showSystemPopup failed";
+    }
 }
 
 void TabMessage::messageClicked() {

@@ -12,18 +12,23 @@ SET(oracle_SOURCES
     src/oraclewizard.cpp
     src/oracleimporter.cpp
     ../cockatrice/src/carddatabase.cpp
+    ../cockatrice/src/pictureloader.cpp
     ../cockatrice/src/settingscache.cpp
+    ../cockatrice/src/shortcutssettings.cpp
+    ../cockatrice/src/settings/carddatabasesettings.cpp
+    ../cockatrice/src/settings/serverssettings.cpp
+    ../cockatrice/src/settings/settingsmanager.cpp
+    ../cockatrice/src/settings/messagesettings.cpp
+    ../cockatrice/src/settings/gamefilterssettings.cpp
+    ../cockatrice/src/settings/layoutssettings.cpp
+    ../cockatrice/src/thememanager.cpp 
     ../cockatrice/src/qt-json/json.cpp
  )
-
-if (UNIX AND NOT APPLE)
-    set_source_files_properties(src/main.cpp PROPERTIES COMPILE_FLAGS -DTRANSLATION_PATH=\\"${CMAKE_INSTALL_PREFIX}/share/oracle/translations\\")
-endif (UNIX AND NOT APPLE)
 
 set(oracle_RESOURCES oracle.qrc)
 
 IF(UPDATE_TRANSLATIONS)
-    FILE(GLOB_RECURSE translate_oracle_SRCS ${CMAKE_SOURCE_DIR}/oracle/src/*.cpp ${CMAKE_SOURCE_DIR}/oracle/src/*.h)
+    FILE(GLOB_RECURSE translate_oracle_SRCS src/*.cpp src/*.h ../cockatrice/src/settingscache.cpp)
     SET(translate_SRCS ${translate_oracle_SRCS})
     SET(oracle_TS "${CMAKE_CURRENT_SOURCE_DIR}/translations/oracle_en.ts")
 ELSE()
@@ -41,28 +46,6 @@ if(APPLE)
 ENDIF(APPLE)
 
 set(ORACLE_LIBS)
-
-# Qt4 stuff
-if(Qt4_FOUND)
-    SET(QT_USE_QTNETWORK TRUE)
-    SET(QT_USE_QTSVG TRUE)
-
-    # Include directories
-    INCLUDE(${QT_USE_FILE})
-    include_directories(${QT_INCLUDES})
-    LIST(APPEND ORACLE_LIBS ${QT_QTMAIN_LIBRARY})
-    LIST(APPEND ORACLE_LIBS ${QT_LIBRARIES})
-
-    # Let cmake chew Qt4's translations and resource files
-    # Note: header files are MOC-ed automatically by cmake
-    IF(UPDATE_TRANSLATIONS)
-        QT4_CREATE_TRANSLATION(oracle_QM ${translate_SRCS} ${oracle_TS})
-    ELSE(UPDATE_TRANSLATIONS)
-        QT4_ADD_TRANSLATION(oracle_QM ${oracle_TS})
-    ENDIF(UPDATE_TRANSLATIONS)
-
-    QT4_ADD_RESOURCES(oracle_RESOURCES_RCC ${oracle_RESOURCES})
-endif()
 
 # qt5 stuff
 if(Qt5Widgets_FOUND)
@@ -125,21 +108,11 @@ ENDIF()
 
 # Build oracle binary and link it
 ADD_EXECUTABLE(oracle WIN32 MACOSX_BUNDLE ${oracle_SOURCES} ${oracle_QM} ${oracle_RESOURCES_RCC} ${oracle_MOC_SRCS})
-set_property(TARGET oracle PROPERTY CXX_STANDARD 11)
-set_property(TARGET oracle PROPERTY CXX_STANDARD_REQUIRED ON)
 
-if(Qt4_FOUND)
-    if(MSVC) 
-        set(QT_USE_QTMAIN true) 
-    endif() 
-    TARGET_LINK_LIBRARIES(oracle ${ORACLE_LIBS})
+if(MSVC)
+    TARGET_LINK_LIBRARIES(oracle Qt5::WinMain)
 endif()
-if(Qt5Widgets_FOUND)
-    if(MSVC)
-        TARGET_LINK_LIBRARIES(oracle Qt5::WinMain)
-    endif()
-    qt5_use_modules(oracle ${ORACLE_LIBS})
-endif()
+qt5_use_modules(oracle ${ORACLE_LIBS})
 
 IF(ZLIB_FOUND)
     TARGET_LINK_LIBRARIES(oracle ${ZLIB_LIBRARIES})
@@ -177,12 +150,11 @@ if(APPLE)
     # these needs to be relative to CMAKE_INSTALL_PREFIX
     set(plugin_dest_dir oracle.app/Contents/Plugins)
     set(qtconf_dest_dir oracle.app/Contents/Resources)
+    get_filename_component(QT_LIBRARY_DIR "${QT_LIBRARY_DIR}/.." ABSOLUTE)
 
-    # qt4: codecs, iconengines, imageformats
-    # qt5: iconengines, platforms
-
+    # qt5 plugins: iconengines, platforms
     install(DIRECTORY "${QT_PLUGINS_DIR}/" DESTINATION ${plugin_dest_dir} COMPONENT Runtime
-        FILES_MATCHING REGEX "(codecs|iconengines|platforms)/.*\\.dylib"
+        FILES_MATCHING REGEX "(iconengines|platforms)/.*\\.dylib"
         REGEX ".*_debug\\.dylib" EXCLUDE)
 
     install(CODE "
@@ -206,16 +178,18 @@ IF(WIN32)
     set(qtconf_dest_dir .)
     list(APPEND libSearchDirs ${QT_LIBRARY_DIR})
     IF(ZLIB_FOUND)
+        # look for dll in the bin/ directory (gnuwin32 package)
         get_filename_component(ZLIB_DLL_DIR "${ZLIB_INCLUDE_DIRS}/../bin/" REALPATH)
         list(APPEND libSearchDirs ${ZLIB_DLL_DIR})
+        # look for dll in the lib/ directory (nuget package)
+        get_filename_component(ZLIB_DLL_DIR "${ZLIB_LIBRARY}" DIRECTORY)
+        list(APPEND libSearchDirs ${ZLIB_DLL_DIR})
     ENDIF()
-    MESSAGE(STATUS "Oracle: ZLIB dll found at ${ZLIB_DLL_DIR}")
 
-    # qt4: codecs, iconengines, imageformats
-    # qt5: iconengines, imageformats, platforms
+    # qt5 plugins: iconengines, platforms
 
     install(DIRECTORY "${QT_PLUGINS_DIR}/" DESTINATION ${plugin_dest_dir} COMPONENT Runtime
-        FILES_MATCHING REGEX "(codecs|iconengines|platforms)/.*[^d]\\.dll")
+        FILES_MATCHING REGEX "(iconengines|platforms)/.*[^d]\\.dll")
 
     install(CODE "
         file(WRITE \"\${CMAKE_INSTALL_PREFIX}/${qtconf_dest_dir}/qt.conf\" \"[Paths]
@@ -231,3 +205,8 @@ Translations = Resources/translations\")
         fixup_bundle(\"\${CMAKE_INSTALL_PREFIX}/oracle.exe\" \"\${QTPLUGINS}\" \"${libSearchDirs}\")
         " COMPONENT Runtime)
 endif() 
+#Compile a portable version, default off
+option(PORTABLE "portable build" OFF)
+IF(PORTABLE)
+add_definitions(-DPORTABLE_BUILD)
+endif()
