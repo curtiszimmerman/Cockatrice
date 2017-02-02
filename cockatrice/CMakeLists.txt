@@ -61,7 +61,6 @@ SET(cockatrice_SOURCES
     src/abstractgraphicsitem.cpp 
     src/abstractcarddragitem.cpp 
     src/dlg_settings.cpp 
-    src/dlg_cardsearch.cpp 
     src/phasestoolbar.cpp 
     src/gamescene.cpp 
     src/arrowitem.cpp 
@@ -80,6 +79,7 @@ SET(cockatrice_SOURCES
     src/tab_logs.cpp
     src/replay_timeline_widget.cpp
     src/deckstats_interface.cpp
+    src/tappedout_interface.cpp
     src/chatview.cpp 
     src/userlist.cpp 
     src/userinfobox.cpp 

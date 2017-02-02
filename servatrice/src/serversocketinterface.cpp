@@ -94,23 +94,6 @@ bool AbstractServerSocketInterface::initSession()
     sendProtocolItem(*identSe);
     delete identSe;
 
-    //limit the number of total users based on configuration settings
-    bool enforceUserLimit = settingsCache->value("security/enable_max_user_limit", false).toBool();
-    if (enforceUserLimit){
-        int userLimit = settingsCache->value("security/max_users_total", 500).toInt();
-        int playerCount = (databaseInterface->getActiveUserCount() + 1);
-        if (playerCount > userLimit){
-            std::cerr << "Max Users Total Limit Reached, please increase the max_users_total setting." << std::endl;
-            logger->logMessage(QString("Max Users Total Limit Reached, please increase the max_users_total setting."), this);
-            Event_ConnectionClosed event;
-            event.set_reason(Event_ConnectionClosed::USER_LIMIT_REACHED);
-            SessionEvent *se = prepareSessionEvent(event);
-            sendProtocolItem(*se);
-            delete se;
-            return false;
-        }
-    }
-
     //allow unlimited number of connections from the trusted sources
     QString trustedSources = settingsCache->value("security/trusted_sources","127.0.0.1,::1").toString();
     if (trustedSources.contains(getAddress(),Qt::CaseInsensitive))
@@ -123,7 +106,6 @@ bool AbstractServerSocketInterface::initSession()
         SessionEvent *se = prepareSessionEvent(event);
         sendProtocolItem(*se);
         delete se;
-
         return false;
     }
 
@@ -671,9 +653,52 @@ Response::ResponseCode AbstractServerSocketInterface::cmdGetLogHistory(const Com
     int maximumResults = cmd.maximum_results();
 
     Response_ViewLogHistory *re = new Response_ViewLogHistory;
-    QListIterator<ServerInfo_ChatMessage> messageIterator(sqlInterface->getMessageLogHistory(userName,ipAddress,gameName,gameID,message,chatType,gameType,roomType,dateRange,maximumResults));
-    while (messageIterator.hasNext())
-        re->add_log_message()->CopyFrom(messageIterator.next());
+    
+    if (servatrice->getEnableLogQuery()) {
+        QListIterator<ServerInfo_ChatMessage> messageIterator(sqlInterface->getMessageLogHistory(userName, ipAddress, gameName, gameID, message, chatType, gameType, roomType, dateRange, maximumResults));
+        while (messageIterator.hasNext())
+            re->add_log_message()->CopyFrom(messageIterator.next());
+    } else {
+        ServerInfo_ChatMessage chatMessage;
+
+        //create dummy chat message for room tab in the event the query is for room messages (and possibly not others)
+        chatMessage.set_time(QString(tr("Log query disabled, please contact server owner for details.")).toStdString());
+        chatMessage.set_sender_id(QString("").toStdString());
+        chatMessage.set_sender_name(QString("").toStdString());
+        chatMessage.set_sender_ip(QString("").toStdString());
+        chatMessage.set_message(QString("").toStdString());
+        chatMessage.set_target_type(QString("room").toStdString());
+        chatMessage.set_target_id(QString("").toStdString());
+        chatMessage.set_target_name(QString("").toStdString());
+        messageList << chatMessage;
+
+        //create dummy chat message for room tab in the event the query is for game messages (and possibly not others)
+        chatMessage.set_time(QString(tr("Log query disabled, please contact server owner for details.")).toStdString());
+        chatMessage.set_sender_id(QString("").toStdString());
+        chatMessage.set_sender_name(QString("").toStdString());
+        chatMessage.set_sender_ip(QString("").toStdString());
+        chatMessage.set_message(QString("").toStdString());
+        chatMessage.set_target_type(QString("game").toStdString());
+        chatMessage.set_target_id(QString("").toStdString());
+        chatMessage.set_target_name(QString("").toStdString());
+        messageList << chatMessage;
+
+        //create dummy chat message for room tab in the event the query is for chat messages (and possibly not others)
+        chatMessage.set_time(QString(tr("Log query disabled, please contact server owner for details.")).toStdString());
+        chatMessage.set_sender_id(QString("").toStdString());
+        chatMessage.set_sender_name(QString("").toStdString());
+        chatMessage.set_sender_ip(QString("").toStdString());
+        chatMessage.set_message(QString("").toStdString());
+        chatMessage.set_target_type(QString("chat").toStdString());
+        chatMessage.set_target_id(QString("").toStdString());
+        chatMessage.set_target_name(QString("").toStdString());
+        messageList << chatMessage;
+
+        QListIterator<ServerInfo_ChatMessage> messageIterator(messageList);
+        while (messageIterator.hasNext())
+            re->add_log_message()->CopyFrom(messageIterator.next());
+    }
+
     rc.setResponseExtension(re);
     return Response::RespOk;
 }
@@ -881,6 +906,11 @@ Response::ResponseCode AbstractServerSocketInterface::cmdRegisterAccount(const C
     if(sqlInterface->userExists(userName))
         return Response::RespUserAlreadyExists;
 
+    if (servatrice->getMaxAccountsPerEmail() && !(sqlInterface->checkNumberOfUserAccounts(emailAddress) < servatrice->getMaxAccountsPerEmail()))
+    {
+        return Response::RespTooManyRequests;
+    }
+
     QString banReason;
     int banSecondsRemaining;
     if (sqlInterface->checkUserIsBanned(this->getAddress(), userName, clientId, banReason, banSecondsRemaining))
@@ -1039,6 +1069,7 @@ Response::ResponseCode AbstractServerSocketInterface::cmdReloadConfig(const Comm
 {
     logDebugMessage("Received admin command: reloading configuration");
     settingsCache->sync();
+    QMetaObject::invokeMethod(server, "setRequiredFeatures", Q_ARG(QString, server->getRequiredFeatures()));
     return Response::RespOk;
 }
 
@@ -1233,7 +1264,7 @@ bool TcpServerSocketInterface::initTcpSession()
     bool enforceUserLimit = settingsCache->value("security/enable_max_user_limit", false).toBool();
     if (enforceUserLimit) {
         int userLimit = settingsCache->value("security/max_users_tcp", 500).toInt();
-        int playerCount = (databaseInterface->getActiveUserCount(getConnectionType()) + 1);
+        int playerCount = (server->getTCPUserCount() + 1);
         if (playerCount > userLimit){
             std::cerr << "Max Tcp Users Limit Reached, please increase the max_users_tcp setting." << std::endl;
             logger->logMessage(QString("Max Tcp Users Limit Reached, please increase the max_users_tcp setting."), this);
@@ -1287,7 +1318,7 @@ bool WebsocketServerSocketInterface::initWebsocketSession()
     bool enforceUserLimit = settingsCache->value("security/enable_max_user_limit", false).toBool();
     if (enforceUserLimit) {
         int userLimit = settingsCache->value("security/max_users_websocket", 500).toInt();
-        int playerCount = (databaseInterface->getActiveUserCount(getConnectionType()) + 1);
+        int playerCount = (server->getWebSocketUserCount() + 1);
         if (playerCount > userLimit){
             std::cerr << "Max Websocket Users Limit Reached, please increase the max_users_websocket setting." << std::endl;
             logger->logMessage(QString("Max Websocket Users Limit Reached, please increase the max_users_websocket setting."), this);

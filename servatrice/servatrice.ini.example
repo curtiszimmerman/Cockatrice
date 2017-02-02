@@ -3,7 +3,8 @@
 ; This is the main configuration file for Servatrice; while using a configuration is not mandatory,
 ; you may want to customize some aspects of your servatrice instance, like its name, port or the way
 ; users can authenticate to the server.
-
+;
+; Can be passed to servatrice with --config /path/to/servatrice.ini
 
 [server]
 
@@ -39,6 +40,8 @@ writelog=1
 
 ; Choose a name for the log file, if enabled; you can specify an absolute path or a path relative to
 ; the servatrice executable; the default file name is server.log (in the same path as servatrice)
+; Note: When running servatrice under windows you will need to use double backslashes between folder locations
+; [ex: C:\\Temp\\server.log ]
 logfile=server.log
 
 ; You may want to silence some commonly recurring messages in the logfile. This setting can contain a
@@ -68,6 +71,10 @@ requiredfeatures=""
 ; menu option.  This list is comma seperated that each item will appear in the drop down list for staff members
 ; to choose from.  Example: "Flaming,Foul Language"
 officialwarnings="Flamming,Spamming,Causing Drama,Abusive Language"
+
+; Maximum time in seconds a player can stay connected but idle.  Default is 3600 (0 = disabled)
+; Clients will be notified at the 90% time period of pending disconnection if they do not take action.
+idleclienttimeout=3600
 
 [authentication]
 
@@ -107,6 +114,18 @@ allowedpunctuation=_.-
 ; If a username can begin with punctuation defined in allowedpunctuation
 allowpunctuationprefix=false
 
+; Disallow usernames containing these words. This list is comma seperated, e.g.
+; "admin,user,name"
+disallowedwords="admin"
+
+; Disallow usernames matching these regular expressions. This list is comma
+; separated, e.g. "\\w+\\d+,\\d{2}user", hence you cannot use commas in your
+; expressions. Backslashes must be escaped, so `\w+\d+` becomes `\\w+\\d+`.
+; WARNING: Complex expressions can be harmful to performance. Please make sure
+;          your expressions are considered well formed. See this page for info:
+;          http://www.regular-expressions.info/catastrophic.html
+disallowedregexp=""
+
 [registration]
 
 ; Servatrice can process registration requests to add new users on the fly.
@@ -121,7 +140,19 @@ allowpunctuationprefix=false
 ; account activated. Default true.
 ;requireemailactivation=true
 
+; Set this number to the maximum number of accounts any one user can use to create new accounts
+; using the same email address. 0 = Unlimited number of accounts (default).
+;maxaccountsperemail=0 
+
 [smtp]
+
+; Enable the internal smtp client to send registration emails.  If you would like to
+; use some other method to send email activation tokens set this value to false. Otherwise
+; setting it to true (default) the server will send canned generated emails containing
+; activation tokens for you during update intervals. Setting this to false will require
+; you to either manually activate user accounts or manually send users the activation token
+; by whatever means.
+enableinternalsmtpclient=true
 
 ; Connectin type: currently supported method are "tcp" and "ssl"; tls is autodetected if available
 connection=tcp
@@ -270,6 +301,10 @@ command_counting_interval=10
 max_command_count_per_interval=20
 
 [logging]
+; Admin/Moderators can query the stored logs for information when looking up reports by various players. This
+; option can allow or disallow them from doing so. 
+; !!NOTE!! Enabling this feature puts a very high CPU and DISK load on the server, enable with caution.
+enablelogquery=false
 
 ; Servatrice can log user messages to the database table cockatrice_log.
 ; These messages can come from different sources; each source can be enabled separately.

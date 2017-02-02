@@ -280,7 +280,7 @@ void MainWindow::actExit()
 
 void MainWindow::actAbout()
 {
-    QMessageBox::about(this, tr("About Cockatrice"), QString(
+    QMessageBox mb(QMessageBox::NoIcon, tr("About Cockatrice"), QString(
         "<font size=\"8\"><b>Cockatrice</b></font><br>"
         + tr("Version %1").arg(VERSION_STRING)
         + "<br><br><b><a href='" + GITHUB_PAGES_URL + "'>" + tr("Cockatrice Webpage") + "</a></b><br>"
@@ -295,8 +295,12 @@ void MainWindow::actAbout()
         + "<b>" + tr("Support:") + "</b><br>"
         + "<a href='" + GITHUB_ISSUES_URL + "'>" + tr("Report an Issue") + "</a><br>"
         + "<a href='" + GITHUB_TROUBLESHOOTING_URL + "'>" + tr("Troubleshooting") + "</a><br>"
-        + "<a href='" + GITHUB_FAQ_URL + "'>" + tr("F.A.Q.") + "</a><br>"
-    ));
+        + "<a href='" + GITHUB_FAQ_URL + "'>" + tr("F.A.Q.") + "</a><br>"),
+        QMessageBox::Ok, this
+    );
+    mb.setIconPixmap(QPixmap("theme:cockatrice").scaled(64, 64));
+    mb.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    mb.exec();
 }
 
 void MainWindow::actUpdate()
@@ -321,16 +325,17 @@ void MainWindow::loginError(Response::ResponseCode r, QString reasonStr, quint32
 {
     switch (r) {
         case Response::RespClientUpdateRequired: {
-            QString formatedMissingFeatures;
-            formatedMissingFeatures = "Missing Features: ";
+            QString formattedMissingFeatures;
+            formattedMissingFeatures = "Missing Features: ";
             for (int i = 0; i < missingFeatures.size(); ++i)
-                formatedMissingFeatures.append(QString("\n     %1").arg(QChar(0x2022)) + " " + missingFeatures.value(i)   );
+                formattedMissingFeatures.append(QString("\n     %1").arg(QChar(0x2022)) + " " + missingFeatures.value(i)   );
+            formattedMissingFeatures.append("\nTo update your client, go to Help -> Update Cockatrice.");
 
             QMessageBox msgBox;
             msgBox.setIcon(QMessageBox::Critical);
             msgBox.setWindowTitle(tr("Failed Login"));
-            msgBox.setText(tr("Your client does not support features that the server requires, please update your client and try again."));
-            msgBox.setDetailedText(formatedMissingFeatures);
+            msgBox.setText(tr("Your client seems to be missing features this server requires for connection."));
+            msgBox.setDetailedText(formattedMissingFeatures);
             msgBox.exec();
             break;
         }
@@ -369,13 +374,17 @@ void MainWindow::loginError(Response::ResponseCode r, QString reasonStr, quint32
             break;
         case Response::RespAccountNotActivated: {
             bool ok = false;
-            QString token = QInputDialog::getText(this, tr("Account activation"), tr("Your account has not been activated yet.\nYou need to provide the activation token received in the activation email"), QLineEdit::Normal, QString(), &ok);
+            QString token = QInputDialog::getText(this, tr("Account activation"), tr("Your account has not been activated yet.\nYou need to provide the activation token received in the activation email."), QLineEdit::Normal, QString(), &ok);
             if(ok && !token.isEmpty())
             {
                 client->activateToServer(token);
                 return;
             }
             client->disconnectFromServer();
+            break;
+        }
+        case Response::RespServerFull: {
+            QMessageBox::critical(this, tr("Server Full"), tr("The server has reached its maximum user capacity, please check back later."));
             break;
         }
         default:
@@ -389,9 +398,9 @@ QString MainWindow::extractInvalidUsernameMessage(QString & in)
 {
     QString out = tr("Invalid username.") + "<br/>";
     QStringList rules = in.split(QChar('|'));
-    if (rules.size() == 7)
+    if (rules.size() == 7 || rules.size() == 9)
     {
-        out += tr("Your username must respect these rules:") + "<br><ul>";
+        out += tr("Your username must respect these rules:") + "<ul>";
 
         out += "<li>" + tr("is %1 - %2 characters long").arg(rules.at(0)).arg(rules.at(1)) + "</li>";
         out += "<li>" + tr("can %1 contain lowercase characters").arg((rules.at(2).toInt() > 0) ? "" : tr("NOT")) + "</li>";
@@ -402,6 +411,16 @@ QString MainWindow::extractInvalidUsernameMessage(QString & in)
             out += "<li>" + tr("can contain the following punctuation: %1").arg(rules.at(6).toHtmlEscaped()) + "</li>";
 
         out += "<li>" + tr("first character can %1 be a punctuation mark").arg((rules.at(5).toInt() > 0) ? "" : tr("NOT")) + "</li>";
+
+        if (rules.size() == 9)
+        {
+            if (rules.at(7).size() > 0)
+                out += "<li>" + tr("can not contain any of the following words: %1").arg(rules.at(7).toHtmlEscaped()) + "</li>";
+
+            if (rules.at(8).size() > 0)
+                out += "<li>" + tr("can not match any of the following expressions: %1").arg(rules.at(8).toHtmlEscaped()) + "</li>";
+        }
+
         out += "</ul>";
     }
     else
@@ -425,7 +444,7 @@ void MainWindow::registerError(Response::ResponseCode r, QString reasonStr, quin
             QMessageBox::critical(this, tr("Registration denied"), tr("It's mandatory to specify a valid email address when registering."));
             break;
         case Response::RespTooManyRequests:
-            QMessageBox::critical(this, tr("Registration denied"), tr("Too many registration attempts from your IP address."));
+            QMessageBox::critical(this, tr("Registration denied"), tr("Too many registration attempts, please try again later or contact the server operator for further details."));
             break;
         case Response::RespPasswordTooShort:
             QMessageBox::critical(this, tr("Registration denied"), tr("Password too short."));
@@ -512,7 +531,7 @@ void MainWindow::retranslateUi()
     dbMenu->setTitle(tr("C&ard Database"));
     aOpenCustomFolder->setText(tr("Open custom image folder"));
     aOpenCustomsetsFolder->setText(tr("Open custom sets folder"));
-    aAddCustomSet->setText(tr("Add custom sets/cards"));    
+    aAddCustomSet->setText(tr("Add custom sets/cards"));
     aEditSets->setText(tr("&Edit sets..."));
     aEditTokens->setText(tr("Edit &tokens..."));
 
@@ -935,7 +954,7 @@ void MainWindow::refreshShortcuts()
 
 void MainWindow::notifyUserAboutUpdate()
 {
-    QMessageBox::information(this, tr("Information"), tr("Your client appears to be missing features that the server supports.\nThis usually means that your client version is out of date, please check to see if there is a new client available for download."));
+    QMessageBox::information(this, tr("Information"), tr("This server supports additional features that your client doesn't have.\nThis is most likely not a problem, but this message might mean there is a new version of Cockatrice available or this server is running a custom or pre-release version.\n\nTo update your client, go to Help -> Update Cockatrice."));
 }
 
 void MainWindow::actOpenCustomFolder()

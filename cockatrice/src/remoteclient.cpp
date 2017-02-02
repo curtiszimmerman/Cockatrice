@@ -25,17 +25,18 @@ RemoteClient::RemoteClient(QObject *parent)
     : AbstractClient(parent), timeRunning(0), lastDataReceived(0), messageInProgress(false), handshakeStarted(false), messageLength(0)
 {
 
+    clearNewClientFeatures();
     int keepalive = settingsCache->getKeepAlive();
     timer = new QTimer(this);
     timer->setInterval(keepalive * 1000);
     connect(timer, SIGNAL(timeout()), this, SLOT(ping()));
 
+   
     socket = new QTcpSocket(this);
     socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     connect(socket, SIGNAL(connected()), this, SLOT(slotConnected()));
     connect(socket, SIGNAL(readyRead()), this, SLOT(readData()));
     connect(socket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(slotSocketError(QAbstractSocket::SocketError)));
-
     connect(this, SIGNAL(serverIdentificationEventReceived(const Event_ServerIdentification &)), this, SLOT(processServerIdentificationEvent(const Event_ServerIdentification &)));
     connect(this, SIGNAL(connectionClosedEventReceived(Event_ConnectionClosed)), this, SLOT(processConnectionClosedEvent(Event_ConnectionClosed)));
     connect(this, SIGNAL(sigConnectToServer(QString, unsigned int, QString, QString)), this, SLOT(doConnectToServer(QString, unsigned int, QString, QString)));
@@ -135,6 +136,13 @@ void RemoteClient::processConnectionClosedEvent(const Event_ConnectionClosed & /
 void RemoteClient::loginResponse(const Response &response)
 {
     const Response_Login &resp = response.GetExtension(Response_Login::ext);
+    
+    QString possibleMissingFeatures;
+    if (resp.missing_features_size() > 0) {
+        for (int i = 0; i < resp.missing_features_size(); ++i)
+            possibleMissingFeatures.append("," + QString::fromStdString(resp.missing_features(i)));
+    }
+
     if (response.response_code() == Response::RespOk) {
         setStatus(StatusLoggedIn);
         emit userInfoChanged(resp.user_info());
@@ -149,10 +157,12 @@ void RemoteClient::loginResponse(const Response &response)
             ignoreList.append(resp.ignore_list(i));
         emit ignoreListReceived(ignoreList);
 
-        if (resp.missing_features_size() > 0 && settingsCache->getNotifyAboutUpdates())
-                emit notifyUserAboutUpdate();
+        if (newMissingFeatureFound(possibleMissingFeatures) && resp.missing_features_size() > 0 && settingsCache->getNotifyAboutUpdates()) {
+            settingsCache->setKnownMissingFeatures(possibleMissingFeatures);
+            emit notifyUserAboutUpdate();
+        }
 
-    } else {
+    } else if (response.response_code() != Response::RespNotConnected) {
         QList<QString> missingFeatures;
         if (resp.missing_features_size() > 0) {
             for (int i = 0; i < resp.missing_features_size(); ++i)
@@ -379,4 +389,30 @@ QString RemoteClient::getSrvClientID(const QString _hostname)
     }
     QString uniqueServerClientID = QCryptographicHash::hash(srvClientID.toUtf8(), QCryptographicHash::Sha1).toHex().right(15);
     return uniqueServerClientID;
+}
+
+bool RemoteClient::newMissingFeatureFound(QString _serversMissingFeatures)
+{
+    bool newMissingFeature = false;
+    QStringList serversMissingFeaturesList = _serversMissingFeatures.split(",");
+    foreach(const QString &feature, serversMissingFeaturesList) {
+        if (!feature.isEmpty()) {
+            if (!settingsCache->getKnownMissingFeatures().contains(feature))
+                return true;
+        }
+    }
+    return newMissingFeature;
+}
+
+void RemoteClient::clearNewClientFeatures()
+{
+    QString newKnownMissingFeatures;
+    QStringList existingKnownMissingFeatures = settingsCache->getKnownMissingFeatures().split(",");
+    foreach(const QString &existingKnownFeature, existingKnownMissingFeatures) {
+        if (!existingKnownFeature.isEmpty()) {
+            if (!clientFeatures.contains(existingKnownFeature))
+                newKnownMissingFeatures.append("," + existingKnownFeature);
+        }
+    }
+    settingsCache->setKnownMissingFeatures(newKnownMissingFeatures);
 }
